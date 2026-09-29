@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Erzeugt das HomeHyrax-App-Symbol aus der vektorisierten Logo-Vorlage (tools/logo_pfade.py, erzeugt von
-tools/logo_trace.py): Haus mit ausgespartem Klippschliefer-Kopf, Ohr-Schleife und Schluessel (Ring = Auge),
+aus der Logo-Vorlage erzeugt): Haus mit ausgespartem Klippschliefer-Kopf, Ohr-Schleife und Schluessel (Ring = Auge),
 alles ein Pfad mit fillType evenOdd. App-Symbol in gebuerstetem Silber auf dunklem Grund, Einfarbig-Symbol und
 Kachel-Logo (Logo.kt) einfarbig.
 Aufruf aus dem Repo-Wurzelverzeichnis:  python3 tools/icon.py   (--vorschau [px] gibt ein SVG aus)
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     if "--vorschau" in sys.argv:
         print(svg_preview(int(sys.argv[-1]) if sys.argv[-1].isdigit() else 300))
         sys.exit(0)
-    # App-Symbol selbst: Bild aus der Vorlage (tools/icon_raster.py, mipmap ic_launcher_background) -> Vordergrund leer
+    # App-Symbol selbst ist ein Bild (mipmap ic_launcher_background) -> Vordergrund leer
     open(R + "ic_launcher_foreground.xml", "w", encoding="utf-8").write(LEER)
     open(R + "ic_launcher_monochrome.xml", "w", encoding="utf-8").write(vec("Einfarbig fuer Themen-Symbole", "#FF000000"))
     # gleiches Motiv als Standard-Symbol fuer Web-Apps/Schaltflaechen (Shortcuts.drawLogo), einfarbig
