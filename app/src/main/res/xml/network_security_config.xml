@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Heimgeraete (ESP32, Router, NAS) sprechen meist nur http:// im LAN.
-     Unterwegs ist die Strecke durch WireGuard verschluesselt. -->
-<network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
-</network-security-config>

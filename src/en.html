@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HomeHyrax – your smart VPN assistant for Android</title>
+<meta name="description" content="Open the web interfaces, switches and cameras of your home network or camper like apps – directly at home, automatically through your own WireGuard or Tailscale tunnel when away. No system VPN, free, open source.">
+<link rel="canonical" href="https://homehyrax.com/">
+<link rel="alternate" hreflang="en" href="https://homehyrax.com/">
+<link rel="alternate" hreflang="de" href="https://homehyrax.com/de/">
+<link rel="alternate" hreflang="x-default" href="https://homehyrax.com/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="HomeHyrax – your smart VPN assistant">
+<meta property="og:description" content="Your home network as an app. Directly at home, automatically through your own tunnel when away – without switching on a VPN.">
+<meta property="og:url" content="https://homehyrax.com/">
+<meta property="og:image" content="https://homehyrax.com/assets/img/promo-en-1-assistent.webp">
+<meta name="theme-color" content="#161b21">
+<link rel="icon" href="{{root}}assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{root}}assets/style.css">
+</head>
+<body>
+{{sprite}}
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="{{root}}assets/img/logo.png" alt="" width="34" height="34"><span>HomeHyrax</span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#why">Why</a>
+      <a href="#features">Features</a>
+      <a href="#guide">Setup</a>
+      <a href="#help">Help</a>
+      <a href="#tech">Open source</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="lang" aria-label="Language"><span>EN</span><a href="{{root}}de/" hreflang="de" lang="de">DE</a></div>
+    <button class="menu-btn" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
+  </div>
+</header>
+
+<main id="main">
+<!-- ============ HERO ============ -->
+<div class="hero" id="top">
+  <div class="circuit" data-seed="11"></div>
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Your smart VPN assistant</p>
+      <h1 class="metal">Your home network as an app.</h1>
+      <p class="lead">Smart home, NAS, Shelly, cameras – one tap away. <b>Direct at home, through your own tunnel when away.</b></p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=en"><svg><use href="#i-play"/></svg><span class="two"><small>Get it on</small>Google Play</span></a>
+        <a class="btn btn-ghost" href="#guide">Setup</a>
+        <a class="btn btn-ghost" href="https://github.com/matthiasharzheim/homehyrax"><svg><use href="#i-github"/></svg>Source code</a>
+      </div>
+      <ul class="facts">
+        <li><svg><use href="#i-check"/></svg>Free</li>
+        <li><svg><use href="#i-check"/></svg>No account with us</li>
+        <li><svg><use href="#i-check"/></svg>No ads, no tracking</li>
+        <li><svg><use href="#i-check"/></svg>Open source (Apache-2.0)</li>
+        <li><svg><use href="#i-check"/></svg>Android 8+</li>
+      </ul>
+    </div>
+    <div class="stage">
+      <div class="phone"><div><img src="{{root}}assets/img/en-home.webp" alt="HomeHyrax home screen with camera, website and switch tiles" width="540" height="1110"></div></div>
+      <div class="pill away"><svg class="gold"><use href="#i-lock"/></svg>Away · via WireGuard</div>
+      <div class="pill home"><svg class="green"><use href="#i-home"/></svg>Home · direct</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ WHY ============ -->
+<section class="alt" id="why">
+  <div class="wrap">
+    <div class="sec-head center">
+      <p class="eyebrow">The idea</p>
+      <h2 class="metal">VPN only where you need it</h2>
+    </div>
+    <div class="grid g2 versus">
+      <div class="card bad">
+        <h3><svg width="24" height="24"><use href="#i-close"/></svg>A phone-wide VPN</h3>
+        <ul>
+          <li><svg><use href="#i-close"/></svg>all traffic goes through your home</li>
+          <li><svg><use href="#i-close"/></svg>disturbs Android Auto, navigation, banking</li>
+          <li><svg><use href="#i-close"/></svg>blocks your other VPN – switched by hand</li>
+        </ul>
+      </div>
+      <div class="card good glow">
+        <h3><svg width="24" height="24" style="color:var(--green)"><use href="#i-check"/></svg>HomeHyrax</h3>
+        <ul>
+          <li><svg><use href="#i-check"/></svg>tunnel only inside the app, only for your devices</li>
+          <li><svg><use href="#i-check"/></svg>everything else stays normal</li>
+          <li><svg><use href="#i-check"/></svg>switches on and off by itself</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ AUTOMATIC ============ -->
+<section id="automatic">
+  <div class="circuit" data-seed="23" style="opacity:.6"></div>
+  <div class="wrap" style="position:relative">
+    <div class="sec-head center">
+      <p class="eyebrow">Automatic</p>
+      <h2 class="metal">The tunnel switches itself</h2>
+      <p>You just tap the icon.</p>
+    </div>
+    <div class="flow">
+      <div class="card">
+        <div class="ico g"><svg><use href="#i-wifi"/></svg></div>
+        <div class="lbl"><b>At home on Wi-Fi</b><span>loads directly, no tunnel</span></div>
+        <span class="state direct"><svg><use href="#i-home"/></svg>Direct</span>
+      </div>
+      <div class="link"></div>
+      <div class="card glow">
+        <div class="ico c"><svg><use href="#i-signal"/></svg></div>
+        <div class="lbl"><b>Away or on another Wi-Fi</b><span>mobile data, hotel, campsite, office</span></div>
+        <span class="state tun"><svg><use href="#i-lock"/></svg>Tunnel on</span>
+      </div>
+      <div class="link"></div>
+      <div class="card">
+        <div class="ico"><svg><use href="#i-power"/></svg></div>
+        <div class="lbl"><b>App closed</b><span>90 s later the tunnel is gone</span></div>
+        <span class="state off"><svg><use href="#i-power"/></svg>Tunnel off</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MULTI ============ -->
+<section class="alt" id="multi">
+  <div class="wrap multi">
+    <div>
+      <p class="eyebrow">Several tunnels at once</p>
+      <h2 class="metal">Home, camper, office</h2>
+      <p class="muted" style="font-size:18px">Every entry knows its tunnel – HomeHyrax picks the right one.</p>
+      <ul class="ticks">
+        <li><b>WireGuard</b> – e.g. FRITZ!Box, OpenWrt, OPNsense, UniFi</li>
+        <li><b>Tailscale / Headscale</b> – without a public IP (DS-Lite, LTE)</li>
+      </ul>
+    </div>
+    <div class="diagram" aria-label="Diagram: phone with three tunnels and direct internet">
+      <svg viewBox="0 0 100 92" preserveAspectRatio="none" aria-hidden="true">
+        <path class="wire dash" d="M50 50 L18 14" vector-effect="non-scaling-stroke"/>
+        <path class="wire dash" d="M50 50 L82 14" vector-effect="non-scaling-stroke"/>
+        <path class="wire dash" d="M50 50 L18 82" vector-effect="non-scaling-stroke"/>
+        <path d="M50 50 L82 82" stroke="#7d8893" stroke-width="2" fill="none" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="node me" style="left:50%;top:54%"><div class="card"><div class="ico c"><svg><use href="#i-phone"/></svg></div><b>Your phone</b><span>HomeHyrax</span></div></div>
+      <div class="node" style="left:18%;top:15%"><div class="card"><div class="ico c"><svg><use href="#i-home"/></svg></div><b>Home</b><span>FRITZ!Box · WireGuard</span></div></div>
+      <div class="node" style="left:82%;top:15%"><div class="card"><div class="ico c"><svg><use href="#i-camper"/></svg></div><b>Camper</b><span>LTE router · Tailscale</span></div></div>
+      <div class="node" style="left:18%;top:89%"><div class="card"><div class="ico c"><svg><use href="#i-office"/></svg></div><b>Office</b><span>WireGuard</span></div></div>
+      <div class="node inet" style="left:82%;top:89%"><div class="card"><div class="ico"><svg><use href="#i-cloud"/></svg></div><b>Everything else</b><span>direct, no tunnel</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head center">
+      <p class="eyebrow">Three kinds of entries</p>
+      <h2 class="metal">Websites, switches, cameras</h2>
+    </div>
+    <div class="kinds">
+      <div class="kind">
+        <div class="shot"><div class="phone"><div><img src="{{root}}assets/img/en-dashboard.webp" alt="Camper dashboard opened away via WireGuard" width="540" height="1170" loading="lazy"></div></div></div>
+        <div>
+          <span class="tag"><svg><use href="#i-web"/></svg>Website</span>
+          <h3 style="font-size:30px">Any web interface as an app</h3>
+          <ul class="ticks">
+            <li>Full screen with its own home-screen icon</li>
+            <li>Badge shows <span class="ui">Home · direct</span> or <span class="ui">Away · via WireGuard</span></li>
+            <li>Live values stay live, pull down to reload</li>
+          </ul>
+        </div>
+      </div>
+      <div class="kind">
+        <div class="shot"><div class="phone"><div><img src="{{root}}assets/img/en-switch.webp" alt="Switch tile reports: Heating switched on" width="540" height="1110" loading="lazy"></div></div></div>
+        <div>
+          <span class="tag"><svg><use href="#i-touch"/></svg>Switch</span>
+          <h3 style="font-size:30px">One tap – garage door, heating</h3>
+          <ul class="ticks">
+            <li>Shelly Gen1–Gen3: pulse, on, off, toggle</li>
+            <li>Shows the real state: <span class="ui">Switched on</span></li>
+            <li>Fingerprint before switching</li>
+          </ul>
+        </div>
+      </div>
+      <div class="kind camera">
+        <div class="shot"><div class="phone wide"><div><img src="{{root}}assets/img/camera.webp" alt="Live camera view from inside a camper" width="1080" height="609" loading="lazy"></div></div></div>
+        <div>
+          <span class="tag"><svg><use href="#i-cam"/></svg>Camera</span>
+          <h3 style="font-size:30px">Live view via RTSP</h3>
+          <ul class="ticks">
+            <li>e.g. Eufy – without the manufacturer's cloud</li>
+            <li>Fresh picture in the tile on every start</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="chips" style="margin-top:60px">
+      <span class="chip"><svg><use href="#i-share"/></svg>Share via QR code</span>
+      <span class="chip"><svg><use href="#i-lock"/></svg>Fingerprint lock</span>
+      <span class="chip"><svg><use href="#i-dash"/></svg>Own icons</span>
+      <span class="chip"><svg><use href="#i-info"/></svg>Connection test</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GALLERY ============ -->
+<section class="alt" id="gallery" style="padding-bottom:50px">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">In the Play Store</p><h2 class="metal">At a glance</h2></div>
+    <div class="gallery">
+      <img src="{{root}}assets/img/promo-en-1-assistent.webp" alt="Your smart VPN assistant" width="540" height="960" loading="lazy">
+      <img src="{{root}}assets/img/promo-en-2-automatisch.webp" alt="The VPN switches itself" width="540" height="960" loading="lazy">
+      <img src="{{root}}assets/img/promo-en-3-mehrere-vpns.webp" alt="Several VPNs at once" width="540" height="960" loading="lazy">
+      <img src="{{root}}assets/img/promo-en-4-handy-frei.webp" alt="Your phone stays VPN-free" width="540" height="960" loading="lazy">
+      <img src="{{root}}assets/img/promo-en-5-dashboards.webp" alt="Dashboards" width="540" height="960" loading="lazy">
+      <img src="{{root}}assets/img/promo-en-6-kamera-schalter.webp" alt="Camera and switch" width="540" height="960" loading="lazy">
+      <img src="{{root}}assets/img/promo-en-7-ohne-abo.webp" alt="No subscription, open source" width="540" height="960" loading="lazy">
+    </div>
+  </div>
+</section>
+
+<!-- ============ GUIDE ============ -->
+<section id="guide">
+  <div class="wrap">
+    <div class="sec-head center">
+      <p class="eyebrow">Setup</p>
+      <h2 class="metal">Ready in three steps</h2>
+    </div>
+    <div class="three">
+      <div class="card"><span class="num">1</span><h3>Install</h3><p>from <a href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=en">Google Play</a> – free.</p></div>
+      <div class="card"><span class="num">2</span><h3>Add a tunnel</h3><p><span class="ui">+ Tunnel</span> → scan the FRITZ!Box QR code or sign in with Tailscale.</p></div>
+      <div class="card"><span class="num">3</span><h3>Add an entry</h3><p><span class="ui">+ New</span> → address, VPN <span class="ui">Smart</span>, done.</p></div>
+    </div>
+    <div class="acc">
+      <p class="acc-title">Detailed guide</p>
+<details id="g-choose"><summary><svg><use href="#i-help"/></svg>WireGuard or Tailscale?</summary><div>
+          <div class="choose">
+            <div class="card glow">
+              <h4><svg width="22" height="22" style="color:var(--cyan)"><use href="#i-key"/></svg>WireGuard</h4>
+              <span class="best">Fastest and most private</span>
+              <ul>
+                <li>Phone connects <b>directly</b> to your router, nobody in between</li>
+                <li>Needs a connection reachable from outside: own public IPv4 (classic DSL/fiber) or IPv6</li>
+                <li>Built into the FRITZ!Box from FRITZ!OS 7.50</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h4><svg width="22" height="22" style="color:var(--cyan)"><use href="#i-cloud"/></svg>Tailscale / Headscale</h4>
+              <span class="best">When the router isn't reachable from outside</span>
+              <ul>
+                <li>For DS-Lite, CGNAT, many cable/fiber lines, LTE/5G routers – e.g. in the camper</li>
+                <li>No port forwarding: both sides connect outward</li>
+                <li>Needs a device at home as subnet router (Raspberry Pi, NAS …)</li>
+                <li>Sign-in via Tailscale (free for personal use) or your own Headscale server</li>
+              </ul>
+            </div>
+          </div>
+          <div class="note info"><svg><use href="#i-info"/></svg><p><b>Not sure?</b> If your FRITZ!Box shows an IPv4 address under <span class="ui path">Internet → Online Monitor</span> that does not start with <code>100.64</code>–<code>100.127</code>, and the overview does not say “DS-Lite”, WireGuard will usually work. Otherwise take Tailscale.</p></div>
+</div></details>
+<details id="g-fritz"><summary><svg><use href="#i-router"/></svg>WireGuard with a FRITZ!Box</summary><div>
+          <p>From FRITZ!OS 7.50. Other routers: <a href="#g-wg-other">see below</a>.</p>
+          <ol class="steps">
+            <li>Open <code>http://fritz.box</code> in a browser and log in.</li>
+            <li>Go to <span class="ui path">Internet → Permit Access → VPN (WireGuard)</span> → <span class="ui">Add connection</span>.</li>
+            <li>Choose <span class="ui">Connect a single device</span>, name it e.g. “HomeHyrax phone”, continue.</li>
+            <li>Confirm on the FRITZ!Box when asked (button on the box or phone).</li>
+            <li>A <b>QR code</b> appears – keep the page open.</li>
+            <li>In HomeHyrax: <span class="ui">Tunnels</span> → <span class="ui">+ Tunnel</span> → <span class="ui">Scan QR code</span>. Alternatives: take a screenshot and choose <span class="ui">QR code from image (screenshot)</span>, load the file via <span class="ui">Choose file (.conf)</span>, or <span class="ui">… or paste configuration</span>.</li>
+            <li>Save. With <span class="ui">Test connection</span> you see right away whether the FRITZ!Box answers (on your home Wi-Fi the test may fail – that's normal).</li>
+          </ol>
+          <div class="note"><svg><use href="#i-warn"/></svg><p><b>One connection per phone.</b> Two phones with the same key disturb each other as soon as both are away at the same time. Create a second connection in the FRITZ!Box for the second phone.</p></div>
+          <ul class="ticks">
+            <li>The FRITZ!Box uses its MyFRITZ! address (<code>…myfritz.net</code>). HomeHyrax resolves it on every connect – a changing IP is no problem.</li>
+            <li>The FRITZ!Box puts <code>0.0.0.0/0</code> (everything through the tunnel) into the configuration. HomeHyrax ignores this on purpose: only the addresses of your tiles use the tunnel.</li>
+          </ul>
+</div></details>
+<details id="g-wg-other"><summary><svg><use href="#i-router"/></svg>WireGuard with other routers</summary><div>
+          <p>HomeHyrax reads the standard WireGuard configuration (<code>wg-quick</code> format). Any router or server that creates such a file or QR code for a device (“peer”, “client”) works.</p>
+          <div class="tbl"><table>
+            <tr><th>Device</th><th>Where</th></tr>
+            <tr><td>OpenWrt</td><td>Package <code>luci-proto-wireguard</code>, Network → Interfaces → WireGuard, add peer, “Generate configuration”</td></tr>
+            <tr><td>OPNsense / pfSense</td><td>VPN → WireGuard, create instance + peer, export the client configuration</td></tr>
+            <tr><td>UniFi gateway</td><td>Settings → VPN → VPN Server → WireGuard, add client, download file</td></tr>
+            <tr><td>Synology Router, ASUS, GL.iNet …</td><td>VPN server → WireGuard → create client/profile, file or QR code</td></tr>
+            <tr><td>Linux / Raspberry Pi</td><td>Your own WireGuard server, e.g. with PiVPN (<code>pivpn add</code>, <code>pivpn -qr</code>)</td></tr>
+          </table></div>
+          <p>The configuration for the phone looks like this (example values):</p>
+<pre><code>[Interface]
+PrivateKey = &lt;key of the phone&gt;
+Address = 192.168.178.201/24
+
+[Peer]
+PublicKey = &lt;key of the router&gt;
+AllowedIPs = 192.168.178.0/24        <span class="c"># your home network</span>
+Endpoint = myhome.example.net:51820
+PersistentKeepalive = 25</code></pre>
+          <p><b><code>AllowedIPs</code> matters:</b> it must contain your home network. HomeHyrax only sends addresses in this range through the tunnel. The UDP port (here <code>51820</code>) must be reachable from outside – most routers open it themselves when you set up the WireGuard server.</p>
+</div></details>
+<details id="g-ts"><summary><svg><use href="#i-cloud"/></svg>Tailscale</summary><div>
+          <p>Tailscale runs <b>inside HomeHyrax</b> – you don't need the Tailscale app or a VPN switched on. You need a free account at <a href="https://tailscale.com">tailscale.com</a> (or your own <a href="https://headscale.net">Headscale</a> server) and <b>a device that runs permanently at home</b> and can run Tailscale: Raspberry Pi, NAS (Synology, QNAP, Unraid), Linux PC, some routers (GL.iNet, OpenWrt). It becomes the <b>subnet router</b> and forwards the app's requests to the other devices.</p>
+          <h4>a) Set up the subnet router (example network <code>192.168.178.0/24</code> – use yours)</h4>
+          <p><b>Raspberry Pi / Linux</b></p>
+<pre><code>curl -fsSL https://tailscale.com/install.sh | sh
+<span class="c"># allow forwarding (once)</span>
+echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-tailscale.conf
+sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
+<span class="c"># sign in and share the home network</span>
+sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
+          <p>The last command shows a link – open it and sign in with your Tailscale account.</p>
+          <p><b>Synology NAS (DSM 7):</b> Package Center → install <b>Tailscale</b>, open, sign in. Then via SSH: <code>sudo tailscale set --advertise-routes=192.168.178.0/24</code></p>
+          <p><b>Other devices:</b> install Tailscale and enable “Subnet router” / <code>--advertise-routes</code> with your home network.</p>
+          <h4>b) Approve the route</h4>
+          <ol class="steps">
+            <li>Open <a href="https://login.tailscale.com/admin/machines">login.tailscale.com/admin/machines</a>.</li>
+            <li>At the subnet router: <span class="ui">⋯ → Edit route settings</span> and <b>tick</b> the route.</li>
+            <li>Recommended: same device <span class="ui">⋯ → Disable key expiry</span>, so the router doesn't need a new sign-in after a few months.</li>
+          </ol>
+          <h4>c) Connect HomeHyrax</h4>
+          <ol class="steps">
+            <li><span class="ui">Tunnels</span> → <span class="ui">+ Tunnel</span> → Tailscale. Leave <span class="ui">Own server (Headscale)</span> empty for Tailscale.</li>
+            <li>Tap <span class="ui">Connect</span>. The browser opens the Tailscale sign-in – use the <b>same account</b> as for the subnet router, then return to the app.</li>
+            <li>The card shows <span class="ui">Connected</span> and the shared home network. No home network yet? Step b) is missing.</li>
+          </ol>
+          <p class="muted">With an <b>auth key</b> (Tailscale admin → Settings → Keys) you can skip the browser sign-in, e.g. for a family phone. When sharing via QR code, HomeHyrax never passes the auth key on.</p>
+</div></details>
+<details id="g-camper"><summary><svg><use href="#i-camper"/></svg>Camper with an LTE/5G router</summary><div>
+          <p>Mobile routers are almost never reachable from outside – take Tailscale.</p>
+          <ul class="ticks">
+            <li>Larger Teltonika models (RUTX, RUTM, TRB1/TRB5) offer Tailscale as a package (System → Package Manager, then Services → VPN → Tailscale; see Teltonika wiki “Tailscale Configuration Example”).</li>
+            <li>Small models like the <b>RUT200</b> don't have enough memory: connect a <b>Raspberry Pi Zero 2 W</b> by Wi-Fi or LAN and set it up as subnet router as above.</li>
+            <li>Give the camper its own address range (e.g. <code>192.168.50.0/24</code>), different from home – otherwise the same addresses get mixed up.</li>
+          </ul>
+</div></details>
+<details id="g-web"><summary><svg><use href="#i-web"/></svg>Add a website</summary><div>
+          <ol class="steps">
+            <li><span class="ui">Home</span> → <span class="ui">+ New</span> → <span class="ui">Website</span>.</li>
+            <li><span class="ui">Name</span> and <span class="ui">Home network address</span>: IP or name, optional port – e.g. <code>192.168.178.1</code>, <code>192.168.178.20:8123</code> or <code>https://nas.local:5001</code>.</li>
+            <li><span class="ui">VPN</span>: <span class="ui">Smart</span> and choose the tunnel.</li>
+            <li>Tap the icon preview to <span class="ui">Choose icon</span> (icons + color) or take an <span class="ui">Image from phone</span>.</li>
+            <li>Optional: <span class="ui">Require unlock</span> (fingerprint/face/PIN). Under <span class="ui">Advanced</span>: <span class="ui">Full screen</span>, <span class="ui">Keep screen on</span>, <span class="ui">Desktop site</span>.</li>
+            <li><span class="ui">Save</span> or straight <span class="ui">Add to home screen</span>.</li>
+          </ol>
+          <p class="muted">Long-press a tile and drag it to reorder. Routers and NAS often use a self-signed certificate: HomeHyrax asks once and then remembers exactly this certificate.</p>
+</div></details>
+<details id="g-vpn"><summary><svg><use href="#i-bolt"/></svg>VPN per entry: None / Smart / Always</summary><div>
+          <div class="modes">
+            <div class="card"><b><svg width="20" height="20"><use href="#i-block"/></svg>None</b><span class="muted">Direct only, no tunnel – for devices you only use at home.</span></div>
+            <div class="card on"><b><svg width="20" height="20" style="color:var(--cyan)"><use href="#i-bolt"/></svg>Smart</b><span class="muted">Direct at home, tunnel when away. The recommended choice.</span></div>
+            <div class="card"><b><svg width="20" height="20" style="color:var(--gold)"><use href="#i-lock"/></svg>Always</b><span class="muted">Always through the tunnel, even at home. No fallback to direct.</span></div>
+          </div>
+</div></details>
+<details id="g-switch"><summary><svg><use href="#i-touch"/></svg>Add a switch (Shelly)</summary><div>
+          <ol class="steps">
+            <li><span class="ui">+ New</span> → <span class="ui">Switch</span> → device <span class="ui">Shelly</span>.</li>
+            <li>On your home Wi-Fi: <span class="ui">Find Shelly on home network</span> – HomeHyrax lists all Shellys with name, generation and whether a password is set. Away or not found: <span class="ui">Set up manually</span> with the Shelly IP and generation.</li>
+            <li>Choose the <span class="ui">Channel</span> (0 = first output) and the <span class="ui">Action</span>: <span class="ui">Pulse – e.g. garage door</span> (briefly on, then off automatically, duration in seconds), <span class="ui">Turn on</span>, <span class="ui">Turn off</span> or <span class="ui">Toggle</span>.</li>
+            <li>If the Shelly has a password: enter it – it's stored encrypted and only sent when the Shelly asks (Gen1 Basic, Gen2 Digest SHA-256).</li>
+            <li>VPN <span class="ui">Smart</span>, choose the tunnel, save.</li>
+          </ol>
+          <p class="muted">Tapping the tile asks for your fingerprint (can be switched off), sends the command and shows the real state: <span class="ui">Switched on</span> / <span class="ui">Switched off</span>. With a pulse, it checks again afterwards and warns if the relay is still on. Other devices: <span class="ui">Custom URL</span> – HomeHyrax calls exactly this address.</p>
+</div></details>
+<details id="g-camera"><summary><svg><use href="#i-cam"/></svg>Add a camera (RTSP)</summary><div>
+          <ol class="steps">
+            <li>In the camera's app, enable the local RTSP stream and copy the link. <b>Eufy:</b> Settings → NAS (RTSP), recording set to <b>“always”</b> – with “on motion” the camera answers “stream not found”.</li>
+            <li>HomeHyrax: <span class="ui">+ New</span> → <span class="ui">Camera</span> → paste the link under <span class="ui">RTSP address</span>. User and password are split off automatically into <span class="ui">Camera user</span> / <span class="ui">Camera password</span>.</li>
+            <li>VPN <span class="ui">Smart</span>, choose the tunnel, save.</li>
+          </ol>
+          <div class="note"><svg><use href="#i-warn"/></svg><p>Battery cameras without a base station (e.g. Reolink Argus, many eufyCams) usually offer no local stream. Cloud-only cameras are not supported.</p></div>
+</div></details>
+<details id="g-share"><summary><svg><use href="#i-share"/></svg>Share with your family</summary><div>
+          <ol class="steps">
+            <li>On your phone: <span class="ui">⋮</span> → <span class="ui">Share HomeHyrax</span>, choose entries and tunnels → <span class="ui">Show QR code</span> or <span class="ui">Send as file (with images)</span>.</li>
+            <li>On the other phone: install HomeHyrax → <span class="ui">⋮</span> → <span class="ui">Import HomeHyrax</span> → scan the code or <span class="ui">Open received file</span>.</li>
+            <li>A preview shows what is new or updated. Existing entries keep their connection and passwords.</li>
+          </ol>
+          <div class="note"><svg><use href="#i-warn"/></svg><p>The code contains keys for your home network – only let it be scanned directly from the screen. For WireGuard, better create a <b>separate connection</b> for each phone. Tailscale is shared without sign-in, the other phone signs in itself.</p></div>
+</div></details>
+<details id="g-detect"><summary><svg><use href="#i-wifi"/></svg>How HomeHyrax knows whether you're home</summary><div>
+          <ul class="ticks">
+            <li><b>Mobile data</b> → tunnel right away.</li>
+            <li><b>On Wi-Fi</b> the app briefly knocks on the address directly (max. 0.8 s). Answer → you're home, the page loads directly and the app remembers this Wi-Fi.</li>
+            <li><b>Other Wi-Fi</b> (hotel, office) → tunnel right away without knocking. If the tunnel fails there, it tries the direct route after all (e.g. new router at home).</li>
+            <li><b>Loading directly fails</b> → it switches to the tunnel by itself.</li>
+            <li>The Wi-Fi is recognized by address range, router address and domain – <b>not</b> by its name, so HomeHyrax needs no location permission.</li>
+          </ul>
+          <div class="note info"><svg><use href="#i-info"/></svg><p><b>Tip:</b> a foreign Wi-Fi with the same default network as yours (e.g. another FRITZ!Box with <code>192.168.178.x</code>) where something happens to answer at the target address is taken for home. Remedy: use your own address range at home (e.g. <code>10.20.30.0/24</code>) or set the entry to VPN <span class="ui">Always</span>.</p></div>
+</div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HELP ============ -->
+<section class="alt" id="help">
+  <div class="wrap">
+    <div class="acc">
+      <p class="acc-title">Help</p>
+      <details><summary><svg><use href="#i-info"/></svg>First step: “Test connection”</summary><div>
+        <p>On the tunnel card tap <span class="ui">Test connection</span>. For Tailscale it shows per entry whether the address is in a shared network, which device carries it (direct or via relay), whether it answers and whether the target can be reached. <span class="ui">Details</span> shows the Tailscale log with <span class="ui">Copy log</span>.</p>
+      </div></details>
+      <details><summary><svg><use href="#i-key"/></svg>WireGuard problems</summary><div>
+        <div class="tbl"><table>
+          <tr><th>Message / behavior</th><th>Cause and fix</th></tr>
+          <tr><td>“No reply from the home network”</td><td>Router not reachable from outside: DS-Lite/CGNAT → Tailscale. Otherwise check port forwarding and <code>Endpoint</code>.</td></tr>
+          <tr><td>Home network address not found</td><td>DynDNS/MyFRITZ! address wrong or not active.</td></tr>
+          <tr><td>Tunnel up, page doesn't load</td><td>Address not in <code>AllowedIPs</code> – add your home network.</td></tr>
+          <tr><td>Works with one phone, not with two</td><td>Same key on both – one connection per phone.</td></tr>
+        </table></div>
+      </div></details>
+      <details><summary><svg><use href="#i-cloud"/></svg>Tailscale problems</summary><div>
+        <div class="tbl"><table>
+          <tr><th>Result</th><th>Cause and fix</th></tr>
+          <tr><td>Not in any shared network</td><td>Route not advertised or not approved in the admin console.</td></tr>
+          <tr><td>Router offline</td><td>Subnet router off or key expired – disable key expiry.</td></tr>
+          <tr><td>Tunnel OK, connection failed</td><td>Router doesn't forward: enable IP forwarding, check firewall, update Tailscale.</td></tr>
+          <tr><td>Sign-in hangs</td><td>Different account than the subnet router – use the same one.</td></tr>
+        </table></div>
+        <p class="muted">Via a Tailscale relay (DERP) it is slower, but works and stays end-to-end encrypted.</p>
+      </div></details>
+      <details><summary><svg><use href="#i-mail"/></svg>Still stuck?</summary><div>
+        <p>Parts of a page missing? Those addresses must be in the tunnel too. After a crash, HomeHyrax shows a report with <span class="ui">Copy</span> – nothing is uploaded. Write to <a href="mailto:info@camperflower.de">info@camperflower.de</a> or open an <a href="https://github.com/matthiasharzheim/homehyrax/issues">issue on GitHub</a>.</p>
+      </div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SECURITY ============ -->
+<section id="security">
+  <div class="wrap">
+    <div class="sec-head center">
+      <p class="eyebrow">Security &amp; privacy</p>
+      <h2 class="metal">Your keys stay on your phone</h2>
+    </div>
+    <div class="grid g3">
+      <div class="card"><div class="ico c"><svg><use href="#i-key"/></svg></div><h3>Encrypted</h3><p class="muted">Keys and passwords AES-GCM with Android Keystore.</p></div>
+      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>Nothing uploaded</h3><p class="muted">No account, no logs, no ads, no tracking.</p></div>
+      <div class="card"><div class="ico y"><svg><use href="#i-lock"/></svg></div><h3>Locked down</h3><p class="muted">Local proxy with a new password on every start.</p></div>
+    </div>
+    <p class="muted" style="text-align:center;margin-top:24px"><a href="https://camperflower.de/homehyrax-datenschutz/">Privacy policy</a></p>
+  </div>
+</section>
+
+<!-- ============ TECH ============ -->
+<section class="alt" id="tech">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Open source · Apache-2.0</p>
+      <h2 class="metal">Under the hood</h2>
+      <p>A Go core (wireguard-go, gVisor, Tailscale tsnet) inside the app – without Android's <code>VpnService</code>.</p>
+    </div>
+    <div class="arch-flow arch">
+      <div class="arch-col">
+        <div class="box"><b>WebView</b><span>local proxy 127.0.0.1</span></div>
+        <div class="box"><b>Camera player</b><span>RTSP via local port</span></div>
+        <div class="box"><b>Switch</b><span>single request</span></div>
+      </div>
+      <div class="arrow">➜</div>
+      <div class="box core"><b>wgbridge (Go)</b><span>routing per target: in AllowedIPs / route → tunnel, otherwise direct</span></div>
+      <div class="arrow">➜</div>
+      <div class="arch-col">
+        <div class="box"><b>WireGuard</b><span>userspace netstack</span></div>
+        <div class="box"><b>Tailscale</b><span>tsnet, subnet routes</span></div>
+        <div class="box"><b>Direct</b><span>everything else</span></div>
+      </div>
+    </div>
+    <div class="links">
+      <a href="https://github.com/matthiasharzheim/homehyrax">Repository</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/wgbridge/bridge.go">bridge.go</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/wgbridge/proxy.go">proxy.go</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/wgbridge/tailscale.go">tailscale.go</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/wgbridge/forward.go">forward.go</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/app/src/main/java/de/camperflower/homehyrax/Net.kt">Net.kt</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/tree/main/app/src/main/java/de/camperflower/homehyrax">Kotlin sources</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/README.md">README</a>
+      <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/CONTRIBUTING.md">Contributing</a>
+    </div>
+    <details style="margin-top:20px"><summary>Build it yourself</summary><div>
+<pre><code>git clone https://github.com/matthiasharzheim/homehyrax
+cd homehyrax
+export ANDROID_HOME=/path/to/sdk
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
+./build-go.sh                      <span class="c"># Go tests + gomobile → AAR</span>
+./gradlew lintRelease assembleRelease</code></pre>
+      <p class="muted">The Go tests run against a real second WireGuard peer and a Tailscale test server in-process.</p>
+    </div></details>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section id="faq">
+  <div class="wrap" style="max-width:900px">
+    <p class="acc-title">FAQ</p>
+    <details><summary>What does it cost?</summary><div><p>Nothing. No subscription, no ads. Tailscale is free for personal use.</p></div></details>
+    <details><summary>Do I need an account?</summary><div><p>Not with us. WireGuard needs none at all; Tailscale uses your Tailscale account or your own Headscale.</p></div></details>
+    <details><summary>Can I keep my other VPN?</summary><div><p>Yes. HomeHyrax doesn't use Android's VPN slot.</p></div></details>
+    <details><summary>Does it drain the battery?</summary><div><p>No. The tunnel only exists while an entry is open and is gone 90 s after closing.</p></div></details>
+    <details><summary>iPhone?</summary><div><p>Not at the moment – Android 8.0 and later.</p></div></details>
+    <details><summary>Why “HomeHyrax”?</summary><div><p>The hyrax lives in rock crevices and slips through narrow gaps – like the tunnel into your home network.</p></div></details>
+  </div>
+</section>
+
+<!-- ============ FINAL ============ -->
+<section class="final" style="padding-top:20px">
+  <div class="wrap">
+    <div class="card glow">
+      <div class="circuit" data-seed="5"></div>
+      <div style="position:relative">
+        <img class="logo" src="{{root}}assets/img/logo.png" alt="HomeHyrax logo" width="110" height="110">
+        <h2 class="metal">Your home in your pocket.</h2>
+        <p class="muted" style="font-size:18px;margin-bottom:28px">Free, open source, without a system VPN.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=en"><svg><use href="#i-play"/></svg><span class="two"><small>Get it on</small>Google Play</span></a>
+          <a class="btn btn-ghost" href="https://github.com/matthiasharzheim/homehyrax"><svg><use href="#i-github"/></svg>GitHub</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <a class="brand" href="#top"><img src="{{root}}assets/img/logo.png" alt="" width="34" height="34"><span>HomeHyrax</span></a>
+        <p style="margin-top:12px">Your smart VPN assistant. An app by Camperflower GmbH.</p>
+      </div>
+      <div>
+        <h5>App</h5>
+        <ul>
+          <li><a href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=en">Google Play</a></li>
+          <li><a href="#guide">Setup</a></li>
+          <li><a href="#help">Help</a></li>
+          <li><a href="#faq">FAQ</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Open source</h5>
+        <ul>
+          <li><a href="https://github.com/matthiasharzheim/homehyrax">GitHub</a></li>
+          <li><a href="https://github.com/matthiasharzheim/homehyrax/blob/main/LICENSE">License (Apache-2.0)</a></li>
+          <li><a href="https://github.com/matthiasharzheim/homehyrax/issues">Report a problem</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Contact &amp; imprint</h5>
+        <address>Camperflower GmbH<br>Wettersteinstrasse 1<br>82024 Taufkirchen, Germany<br><a href="mailto:info@camperflower.de">info@camperflower.de</a></address>
+        <ul style="margin-top:10px">
+          <li><a href="https://camperflower.de/impressum/">Imprint</a></li>
+          <li><a href="https://camperflower.de/homehyrax-datenschutz/">Privacy policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="legal">© 2026 Camperflower GmbH. The name and logo “HomeHyrax” are not covered by the open-source license. WireGuard is a registered trademark of Jason A. Donenfeld. Tailscale is a trademark of Tailscale Inc. Google Play and Android are trademarks of Google LLC. FRITZ!Box, Shelly and other product names are trademarks of their respective owners. HomeHyrax is not affiliated with these companies.</p>
+  </div>
+</footer>
+<script src="{{root}}assets/site.js" defer></script>
+</body>
+</html>
