@@ -1,6 +1,6 @@
 # HomeHyrax (Android)
 
-**English** · [Deutsch](README.de.md)
+**English** · [Deutsch](README.de.md) · Website, guide and help: **[homehyrax.com](https://homehyrax.com)**
 
 Open web interfaces, switches and cameras on your home network (smart home, NAS, router, Shelly, IP camera …)
 like separate apps: **directly on your home Wi-Fi, automatically through your own tunnel (WireGuard or Tailscale)
@@ -35,13 +35,14 @@ only inside this app, only for the addresses of your tiles and only while they a
 
 ## Install
 
-A Play Store release is planned. Until then: build it yourself (see [Building](#building)) or take the APK from a
-CI run (Actions → Android App → artifact `HomeHyrax-apk`). Without signing secrets this APK is unsigned and has to
-be signed with your own key before installing (`apksigner`).
+**[Google Play](https://play.google.com/store/apps/details?id=de.camperflower.homehyrax)** – or build it yourself
+(see [Building](#building)), or take the APK from a CI run (Actions → Android App → artifact `HomeHyrax-apk`).
+Without signing secrets this APK is unsigned and has to be signed with your own key before installing (`apksigner`).
+A self-built APK cannot be installed over the Play Store version (different signature).
 
 ## Setup
 
-Detailed guides (German): **[WireGuard (FRITZ!Box and other routers)](docs/anleitung-wireguard.md)** ·
+Step-by-step guide: **[homehyrax.com](https://homehyrax.com/#guide)**. Detailed guides (German): **[WireGuard (FRITZ!Box and other routers)](docs/anleitung-wireguard.md)** ·
 **[Tailscale (no public IP, e.g. in a camper van)](docs/anleitung-tailscale.md)**. In short:
 
 **WireGuard (FRITZ!Box)**

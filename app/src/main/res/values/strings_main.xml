@@ -101,6 +101,8 @@
     <string name="main_unpin_text">Android doesn\'t let apps remove icons from the home screen themselves.\n\nLong-press the icon on the home screen and choose \"Remove\".</string>
     <string name="main_got_it">Got it</string>
     <string name="main_info_intro">Reach your smart home, NAS &amp; co. on the go – no subscription, no cost, no account with us. You use your own tunnel: WireGuard or Tailscale.</string>
+    <string name="main_info_web">Guide &amp; help: %1$s</string>
+    <string name="main_info_web_url">https://homehyrax.com</string>
     <string name="main_info_where_title">At home or away?</string>
     <string name="main_info_where_text">• Mobile data → tunnel right away.\n• On Wi-Fi the app briefly knocks on the address directly (max. 0.8 s). Answer → you\'re at home, the page loads directly and the app remembers this Wi-Fi.\n• On other Wi-Fi networks it then uses the tunnel right away, without knocking first. If the tunnel fails there, it tries the direct route after all (e.g. new router).\n• If loading directly fails, it switches to the tunnel by itself.\nThe app recognizes the Wi-Fi by address range, router address and domain – not by the Wi-Fi name, which Android only reveals with location permission.</string>
     <string name="main_info_wg_ts_title">WireGuard or Tailscale?</string>

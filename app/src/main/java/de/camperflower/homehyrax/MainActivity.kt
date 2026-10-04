@@ -1272,6 +1272,13 @@ class MainActivity : FragmentActivity() {
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     P(stringResource(R.string.main_info_intro))
+                    // Anleitung auf der Webseite, je Sprache eigene Adresse
+                    val web = stringResource(R.string.main_info_web_url)
+                    TextButton(onClick = {
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(web))) }
+                    }, contentPadding = PaddingValues(0.dp)) {
+                        Text(stringResource(R.string.main_info_web, web.removePrefix("https://").trimEnd('/')))
+                    }
                     H(stringResource(R.string.main_info_where_title))
                     P(stringResource(R.string.main_info_where_text))
                     H(stringResource(R.string.main_info_wg_ts_title))
