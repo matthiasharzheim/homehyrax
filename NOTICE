@@ -1,0 +1,12 @@
+HomeHyrax
+Copyright 2026 Camperflower GmbH
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+"HomeHyrax" and the HomeHyrax logo are not licensed under the Apache License
+(section 6); forks must use a different name and icon.
+
+Third-party components and their licenses are listed in the app under
+Info -> Open-source licenses (Go modules: app/src/main/assets/licenses_go.txt).
+WireGuard is a registered trademark of Jason A. Donenfeld. Tailscale is a
+trademark of Tailscale Inc.

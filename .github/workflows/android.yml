@@ -1,0 +1,150 @@
+name: Android App
+
+# Baut die HomeHyrax-APK bei Push auf main, bei PRs und von Hand.
+# Die APK liegt als Artefakt am Run (Actions -> Android App -> HomeHyrax-apk).
+#
+# Optionale Einstellungen des Repos:
+#   Variable VERSION_OFFSET        Versatz fuer versionCode (Standard 100, muss ueber allen verteilten Builds liegen)
+#   Secrets SIDELOAD_KEYSTORE_B64 + SIDELOAD_KEYSTORE_PASSWORD (+ SIDELOAD_KEY_ALIAS, SIDELOAD_KEY_PASSWORD)
+#                                  signieren die APK; ohne sie ist die Release-APK unsigniert
+#   Secrets UPLOAD_KEYSTORE_B64 + UPLOAD_KEYSTORE_PASSWORD, UPLOAD_KEY_ALIAS, UPLOAD_KEY_PASSWORD
+#                                  zusaetzlich das Play-Store-Bundle (AAB)
+#   Secret PLAY_SERVICE_ACCOUNT_JSON  Dienstkonto der Play Console: Push auf main laedt das AAB in den internen Test
+
+# Reine Webseiten-Aenderungen (site/) bauen keine App und laden nichts in den Play-Store
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["site/**", ".github/workflows/pages.yml"]
+  pull_request:
+    paths-ignore: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+# Nur lesen: der Lauf baut und laedt Artefakte hoch, schreibt nichts ins Repo
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      VERSION_OFFSET: ${{ vars.VERSION_OFFSET || '100' }}
+      # Play-Store-Bundle nur, wenn der Upload-Schluessel als Secret hinterlegt ist
+      HAS_UPLOAD_KEY: ${{ secrets.UPLOAD_KEYSTORE_B64 != '' }}
+      HAS_SIDELOAD_KEY: ${{ secrets.SIDELOAD_KEYSTORE_B64 != '' }}
+      HAS_PLAY_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # gradle-wrapper.jar muss ein offizielles Gradle-Release sein
+      - uses: gradle/actions/wrapper-validation@v6
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: wgbridge/go.mod
+          cache-dependency-path: wgbridge/go.sum
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle   # Gradle-Abhaengigkeiten zwischen Laeufen behalten (~1-2 min)
+
+      # Android-SDK ist auf ubuntu-latest vorinstalliert ($ANDROID_HOME);
+      # android-actions/setup-android scheitert am veralteten Paket "tools".
+      - name: SDK + NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358" > /dev/null
+
+      # Englisch/Deutsch vollstaendig und mit gleichen Platzhaltern (sonst zeigt die App Schluessel statt Text)
+      - name: Uebersetzungen pruefen
+        run: python3 tools/check_strings.py
+
+      # Von Hand gestartet: zusaetzlich x86_64 fuer den Android-Emulator; ARM-Uebersetzung
+      # im Emulator reicht fuer den Go-Kern nicht (SIGILL)
+      - name: WireGuard-Bibliothek (Go-Tests + gomobile)
+        env:
+          GOMOBILE_TARGETS: ${{ github.event_name == 'workflow_dispatch' && 'android/arm64,android/arm,android/amd64' || 'android/arm64,android/arm' }}
+        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" ./build-go.sh
+
+      # Sideload-Signatur nur, wenn das Secret existiert (Secrets fehlen bei PRs aus Forks)
+      - name: Sideload-Schluessel
+        if: env.HAS_SIDELOAD_KEY == 'true'
+        env:
+          SIDELOAD_KEYSTORE_B64: ${{ secrets.SIDELOAD_KEYSTORE_B64 }}
+        run: |
+          echo "$SIDELOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/sideload.jks"
+          echo "SIDELOAD_KEYSTORE=$RUNNER_TEMP/sideload.jks" >> "$GITHUB_ENV"
+
+      # Nur 64-Bit: APK ~24 MB statt ~45 MB, alle aktuellen Handys sind 64-Bit
+      # Lint auch bei PRs (~1-2 min mehr): sonst fallen Lint-Fehler erst nach dem Merge auf main auf
+      - name: APK bauen (inkl. Lint)
+        env:
+          SIDELOAD_KEYSTORE_PASSWORD: ${{ secrets.SIDELOAD_KEYSTORE_PASSWORD }}
+          SIDELOAD_KEY_ALIAS: ${{ secrets.SIDELOAD_KEY_ALIAS }}
+          SIDELOAD_KEY_PASSWORD: ${{ secrets.SIDELOAD_KEY_PASSWORD }}
+        run: ./gradlew lintRelease assembleRelease -Pabis=arm64-v8a --console=plain
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HomeHyrax-apk
+          # app-release.apk (signiert) oder app-release-unsigned.apk
+          path: app/build/outputs/apk/release/app-release*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Emulator-APK (x86_64, nur von Hand gestartet)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SIDELOAD_KEYSTORE_PASSWORD: ${{ secrets.SIDELOAD_KEYSTORE_PASSWORD }}
+          SIDELOAD_KEY_ALIAS: ${{ secrets.SIDELOAD_KEY_ALIAS }}
+          SIDELOAD_KEY_PASSWORD: ${{ secrets.SIDELOAD_KEY_PASSWORD }}
+        run: |
+          rm -f app/build/outputs/apk/release/app-release*.apk
+          ./gradlew assembleRelease -Pabis=x86_64 --console=plain
+          apk=$(ls app/build/outputs/apk/release/app-release*.apk | head -n 1)
+          mv "$apk" "$(basename "$apk" .apk)-x86_64.apk"
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: HomeHyrax-apk-x86_64
+          path: app-release*-x86_64.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Store-Bundle (AAB, mit Upload-Schluessel)
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        run: |
+          echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.jks" ./gradlew bundleRelease --console=plain
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Schluessel entfernen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sideload.jks" "$RUNNER_TEMP/upload.jks"
+
+      - uses: actions/upload-artifact@v7
+        if: env.HAS_UPLOAD_KEY == 'true'
+        with:
+          name: HomeHyrax-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      # Jeder Stand auf main geht automatisch in den internen Test von Google Play; Tester bekommen ihn
+      # als normales Update. Nur Play-signierte Builds lassen sich ueber die Play-Version installieren.
+      # Produktion bleibt Handarbeit in der Play Console (Release aus dem internen Test uebernehmen).
+      - name: Google Play, interner Test
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: de.camperflower.homehyrax
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          mappingFile: app/build/outputs/mapping/release/mapping.txt
+          track: internal
+          status: completed

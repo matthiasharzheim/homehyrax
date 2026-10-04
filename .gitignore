@@ -1,0 +1,17 @@
+.gradle/
+build/
+app/build/
+local.properties
+app/libs/*.aar
+app/libs/*.jar
+*.apk
+.idea/
+__pycache__/
+# Ausgaben von wgbridge/cmd/demoheim (enthalten WireGuard-Schluessel)
+demoheim-keys.json
+demoheim-handy.conf
+# Signaturschluessel und Store-Bundles nie einchecken
+*.jks
+*.keystore
+*.p12
+*.aab
