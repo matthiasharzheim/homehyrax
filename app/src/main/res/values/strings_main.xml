@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="main_crash_title">HomeHyrax crashed</string>
-    <string name="main_crash_text">Nothing was uploaded. Copy the report and attach it when reporting the problem (e.g. as an issue).</string>
+    <string name="main_crash_text">Nothing was uploaded. Send us the report by e-mail – you see everything before sending.</string>
     <string name="main_crash_copied">Report copied</string>
+    <string name="main_crash_mail">Send by e-mail</string>
+    <string name="main_crash_subject">HomeHyrax crash report %1$s</string>
+    <string name="main_crash_no_mail">No e-mail app – report copied</string>
     <string name="main_copy">Copy</string>
     <string name="main_close">Close</string>
     <string name="main_tab_home">Home</string>
@@ -206,7 +209,7 @@
         <item quantity="other">%1$d connections</item>
     </plurals>
     <!-- Code-Pruefung (Sperre, Import, Zertifikate) -->
-    <string name="main_crash_check">Check the report before sharing it: issues are public.</string>
+    <string name="main_crash_check">The report may contain addresses from your network. Check it before sharing it publicly (e.g. as an issue).</string>
     <string name="main_unlock_confirm">Confirm to continue</string>
     <string name="main_err_save">Could not save (secure storage unavailable). Please try again.</string>
     <string name="main_err_local_address">This address points to the phone itself – not allowed</string>

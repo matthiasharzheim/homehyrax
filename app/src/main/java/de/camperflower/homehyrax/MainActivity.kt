@@ -369,7 +369,15 @@ class MainActivity : FragmentActivity() {
                         Text(crash.takeLast(4000), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp))
                     }
                 },
-                confirmButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(crash)); toast(getString(R.string.main_crash_copied)) }) { Text(stringResource(R.string.main_copy)) } },
+                confirmButton = {
+                    Row {
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(crash)); toast(getString(R.string.main_crash_copied)) }) { Text(stringResource(R.string.main_copy)) }
+                        // Nutzer schickt selbst ueber sein Mailprogramm – die App laedt nichts hoch
+                        TextButton(onClick = {
+                            if (!mailCrash(crash)) { clipboard.setText(AnnotatedString(crash)); toast(getString(R.string.main_crash_no_mail)) }
+                        }) { Text(stringResource(R.string.main_crash_mail)) }
+                    }
+                },
                 dismissButton = { TextButton(onClick = { CrashLog.clear(); crash = "" }) { Text(stringResource(R.string.main_close)) } },
             )
         }
@@ -1258,6 +1266,17 @@ class MainActivity : FragmentActivity() {
                 if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+
+    /** Absturzbericht als fertige Mail ans Mailprogramm geben (Version + Geraet dazu). false = keine Mail-App. */
+    private fun mailCrash(report: String): Boolean {
+        val body = "HomeHyrax ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} " +
+            "(API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n\n$report"
+        val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+            .putExtra(Intent.EXTRA_EMAIL, arrayOf(getString(R.string.main_info_mail)))
+            .putExtra(Intent.EXTRA_SUBJECT, getString(R.string.main_crash_subject, BuildConfig.VERSION_NAME))
+            .putExtra(Intent.EXTRA_TEXT, body)
+        return runCatching { startActivity(mail) }.isSuccess
     }
 
     /** Kurze Beschreibung: wozu die App da ist und wie sie "zuhause" erkennt. */

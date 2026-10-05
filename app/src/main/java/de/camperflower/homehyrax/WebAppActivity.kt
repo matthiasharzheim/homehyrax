@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.HttpAuthHandler
+import android.webkit.JavascriptInterface
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -76,6 +77,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -122,6 +125,8 @@ class WebAppActivity : FragmentActivity() {
     private var startedOnce = false
     private var hiddenAt = 0L
     private lateinit var pull: SwipeRefreshLayout
+    /** Finger liegt in einem inneren Scrollbereich der Seite, der nicht ganz oben steht (meldet PULL_JS). */
+    @Volatile private var innerScrolled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -146,6 +151,9 @@ class WebAppActivity : FragmentActivity() {
                 isRefreshing = false   // Fortschritt zeigt die Ladeanzeige (Cover)
                 if (!locked) retry()
             }
+            // nicht nur die Seite selbst, auch innere Scrollbereiche (Dialoge, Seitenleisten) zaehlen:
+            // sonst laedt Hochwischen in einem nach unten gescrollten Dialog neu, statt zu scrollen
+            setOnChildScrollUpCallback { _, _ -> web.canScrollVertically(-1) || innerScrolled }
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -332,6 +340,10 @@ class WebAppActivity : FragmentActivity() {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.mediaPlaybackRequiresUserGesture = false
+        // einzige Bruecke zur Seite: ein Wahr/Falsch fuer "Nach unten ziehen" (siehe PULL_JS)
+        addJavascriptInterface(PullBridge(), "HomeHyraxPull")
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+            WebViewCompat.addDocumentStartJavaScript(this, PULL_JS, setOf("*"))
         if (app.desktop) {
             // Desktop-Webseite: Desktop-User-Agent (gleiche Chrome-Version), "Mobile"/Android-Kennung weg
             val chrome = Regex("Chrome/[\\d.]+").find(settings.userAgentString)?.value ?: "Chrome/130.0.0.0"
@@ -341,11 +353,17 @@ class WebAppActivity : FragmentActivity() {
         webViewClient = Client()
     }
 
+    private inner class PullBridge {
+        @JavascriptInterface fun inner(scrolled: Boolean) { innerScrolled = scrolled }
+    }
+
     private inner class Client : WebViewClient() {
 
         override fun onPageFinished(view: WebView, url: String?) {
             // Desktop: mobiles Viewport-Tag ueberschreiben -> Seite wird in 1200 px Breite gelayoutet und eingepasst
             if (app.desktop) view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
+            // alte WebViews ohne Dokumentstart-Skript: nach dem Laden nachreichen (PULL_JS laeuft nur einmal)
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(PULL_JS, null)
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
@@ -604,6 +622,18 @@ class WebAppActivity : FragmentActivity() {
 
     companion object { private const val RELOCK_MS = 60_000L }
 }
+
+/**
+ * Meldet bei jeder Beruehrung, ob der Finger in einem inneren Scrollbereich liegt, der schon nach unten
+ * gescrollt ist (scrollTop > 0, overflow auto/scroll). Dann ist Hochwischen Scrollen und nicht "neu laden".
+ */
+private const val PULL_JS =
+    "(function(){if(window.__hhPull)return;window.__hhPull=1;" +
+    "document.addEventListener('touchstart',function(e){var n=e.target,s=false;" +
+    "while(n&&n.nodeType===1&&n!==document.body&&n!==document.documentElement){" +
+    "if(n.scrollTop>0){var o=getComputedStyle(n).overflowY;if(o==='auto'||o==='scroll'||o==='overlay'){s=true;break;}}" +
+    "n=n.parentElement;}" +
+    "try{HomeHyraxPull.inner(s);}catch(x){}},{capture:true,passive:true});})()"
 
 private const val DESKTOP_VIEWPORT_JS =
     "(function(){var m=document.querySelector('meta[name=viewport]');" +

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="main_crash_title">HomeHyrax ist abgestürzt</string>
-    <string name="main_crash_text">Es wurde nichts hochgeladen. Bericht kopieren und beim Melden des Fehlers beifügen (z. B. als Issue).</string>
+    <string name="main_crash_text">Es wurde nichts hochgeladen. Schick uns den Bericht per E-Mail – du siehst vor dem Senden alles.</string>
     <string name="main_crash_copied">Bericht kopiert</string>
+    <string name="main_crash_mail">Per E-Mail senden</string>
+    <string name="main_crash_subject">HomeHyrax-Absturzbericht %1$s</string>
+    <string name="main_crash_no_mail">Keine E-Mail-App – Bericht kopiert</string>
     <string name="main_copy">Kopieren</string>
     <string name="main_close">Schließen</string>
     <string name="main_tab_home">Home</string>
@@ -206,7 +209,7 @@
         <item quantity="other">%1$d Verbindungen</item>
     </plurals>
     <!-- Code-Pruefung (Sperre, Import, Zertifikate) -->
-    <string name="main_crash_check">Bericht vor dem Weitergeben prüfen: Issues sind öffentlich.</string>
+    <string name="main_crash_check">Der Bericht kann Adressen aus deinem Netz enthalten. Vor dem öffentlichen Teilen (z. B. als Issue) prüfen.</string>
     <string name="main_unlock_confirm">Zum Fortfahren bestätigen</string>
     <string name="main_err_save">Speichern nicht möglich (sicherer Speicher nicht verfügbar). Bitte erneut versuchen.</string>
     <string name="main_err_local_address">Diese Adresse zeigt auf das Handy selbst – nicht erlaubt</string>
