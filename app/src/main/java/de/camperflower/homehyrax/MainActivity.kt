@@ -365,18 +365,20 @@ class MainActivity : FragmentActivity() {
                         Spacer(Modifier.height(4.dp))
                         Text(stringResource(R.string.main_crash_check), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.height(8.dp))
+                        // Kopieren hier statt unten (drei Tasten passen auf schmalen Geraeten nicht in eine Zeile),
+                        // vor dem Bericht, damit man nicht erst bis ans Ende scrollen muss
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(crash)); toast(getString(R.string.main_crash_copied)) },
+                            contentPadding = PaddingValues(0.dp)) { Text(stringResource(R.string.main_copy)) }
                         Text(crash.takeLast(4000), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp))
                     }
                 },
                 confirmButton = {
-                    Row {
-                        TextButton(onClick = { clipboard.setText(AnnotatedString(crash)); toast(getString(R.string.main_crash_copied)) }) { Text(stringResource(R.string.main_copy)) }
-                        // Nutzer schickt selbst ueber sein Mailprogramm – die App laedt nichts hoch
-                        TextButton(onClick = {
-                            if (!mailCrash(crash)) { clipboard.setText(AnnotatedString(crash)); toast(getString(R.string.main_crash_no_mail)) }
-                        }) { Text(stringResource(R.string.main_crash_mail)) }
-                    }
+                    // Nutzer schickt selbst ueber sein Mailprogramm – die App laedt nichts hoch. Bericht vorsorglich
+                    // immer in die Zwischenablage: manche Mail-Apps uebernehmen den vorgegebenen Text nicht
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(crash))
+                        toast(getString(if (mailCrash(crash)) R.string.main_crash_copied else R.string.main_crash_no_mail))
+                    }) { Text(stringResource(R.string.main_crash_mail)) }
                 },
                 dismissButton = { TextButton(onClick = { CrashLog.clear(); crash = "" }) { Text(stringResource(R.string.main_close)) } },
             )
@@ -1272,11 +1274,21 @@ class MainActivity : FragmentActivity() {
     private fun mailCrash(report: String): Boolean {
         val body = "HomeHyrax ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} " +
             "(API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n\n$report"
-        val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
-            .putExtra(Intent.EXTRA_EMAIL, arrayOf(getString(R.string.main_info_mail)))
+        val to = getString(R.string.main_info_mail)
+        // ACTION_SEND mit mailto-Selector: nur Mail-Apps, und anders als bei ACTION_SENDTO uebernehmen auch
+        // Samsung-Mail/Outlook/K-9 Empfaenger, Betreff und Text
+        val mail = Intent(Intent.ACTION_SEND).apply {
+            type = "message/rfc822"
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.main_crash_subject, BuildConfig.VERSION_NAME))
+            putExtra(Intent.EXTRA_TEXT, body)
+            selector = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$to"))
+        }
+        // Mail-Apps, die nur mailto kennen: zweiter Versuch mit reinem SENDTO
+        val plain = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$to"))
             .putExtra(Intent.EXTRA_SUBJECT, getString(R.string.main_crash_subject, BuildConfig.VERSION_NAME))
             .putExtra(Intent.EXTRA_TEXT, body)
-        return runCatching { startActivity(mail) }.isSuccess
+        return runCatching { startActivity(mail) }.isSuccess || runCatching { startActivity(plain) }.isSuccess
     }
 
     /** Kurze Beschreibung: wozu die App da ist und wie sie "zuhause" erkennt. */

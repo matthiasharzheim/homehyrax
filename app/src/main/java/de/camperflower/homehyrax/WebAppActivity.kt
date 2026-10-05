@@ -359,6 +359,12 @@ class WebAppActivity : FragmentActivity() {
 
     private inner class Client : WebViewClient() {
 
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            // neue Seite: alter Wert aus einem Dialog der vorigen Seite gilt nicht mehr (sonst haengt die Sperre,
+            // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
+            innerScrolled = false
+        }
+
         override fun onPageFinished(view: WebView, url: String?) {
             // Desktop: mobiles Viewport-Tag ueberschreiben -> Seite wird in 1200 px Breite gelayoutet und eingepasst
             if (app.desktop) view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
@@ -624,15 +630,18 @@ class WebAppActivity : FragmentActivity() {
 }
 
 /**
- * Meldet bei jeder Beruehrung, ob der Finger in einem inneren Scrollbereich liegt, der schon nach unten
- * gescrollt ist (scrollTop > 0, overflow auto/scroll). Dann ist Hochwischen Scrollen und nicht "neu laden".
+ * Meldet bei jeder Beruehrung, ob der Finger in einem Scrollbereich liegt, der schon nach unten gescrollt ist.
+ * Dann ist Hochwischen Scrollen und nicht "neu laden". Laeuft ueber composedPath (auch durch Shadow DOM, z. B.
+ * Dialoge in Web Components); in einem iframe zaehlt auch dessen eigenes Dokument, das die App nicht sieht.
  */
 private const val PULL_JS =
     "(function(){if(window.__hhPull)return;window.__hhPull=1;" +
-    "document.addEventListener('touchstart',function(e){var n=e.target,s=false;" +
-    "while(n&&n.nodeType===1&&n!==document.body&&n!==document.documentElement){" +
-    "if(n.scrollTop>0){var o=getComputedStyle(n).overflowY;if(o==='auto'||o==='scroll'||o==='overlay'){s=true;break;}}" +
-    "n=n.parentElement;}" +
+    "function sc(n){var o=getComputedStyle(n).overflowY;return o==='auto'||o==='scroll'||o==='overlay';}" +
+    "document.addEventListener('touchstart',function(e){var s=false,se=document.scrollingElement," +
+    "p=e.composedPath?e.composedPath():[e.target];" +
+    "for(var i=0;i<p.length&&!s;i++){var n=p[i];if(!n||n.nodeType!==1)continue;" +
+    "if(n===se)break;if(n.scrollTop>0&&sc(n))s=true;}" +
+    "if(!s&&window!==top&&se&&se.scrollTop>0)s=true;" +
     "try{HomeHyraxPull.inner(s);}catch(x){}},{capture:true,passive:true});})()"
 
 private const val DESKTOP_VIEWPORT_JS =
