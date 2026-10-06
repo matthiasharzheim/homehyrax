@@ -1,45 +1,71 @@
 name: Android App
 
-# Baut die HomeHyrax-APK bei Push auf main, bei PRs und von Hand.
-# Die APK liegt als Artefakt am Run (Actions -> Android App -> HomeHyrax-apk).
+# Dieselbe Datei liegt im privaten Arbeits-Repo und im oeffentlichen Spiegel (oeffentlich_spiegeln.py).
+#   Oeffentliches Repo: baut bei Push auf main und auf Pruef-Branches (pruefung/*), bei PRs und von Hand
+#                       (oeffentliche Repos kosten weder Actions-Minuten noch -Speicher); Push auf main baut
+#                       zusaetzlich das Store-Bundle und laedt es in den internen Test (Job "play", Umgebung "play")
+#   Privates Repo:      baut nur von Hand (Actions-Minuten und -Speicher des Kontos sind knapp), Artefakte 1 Tag
 #
-# Optionale Einstellungen des Repos:
+# Einstellungen je Repo:
 #   Variable VERSION_OFFSET        Versatz fuer versionCode (Standard 100, muss ueber allen verteilten Builds liegen)
 #   Secrets SIDELOAD_KEYSTORE_B64 + SIDELOAD_KEYSTORE_PASSWORD (+ SIDELOAD_KEY_ALIAS, SIDELOAD_KEY_PASSWORD)
 #                                  signieren die APK; ohne sie ist die Release-APK unsigniert
-#   Secrets UPLOAD_KEYSTORE_B64 + UPLOAD_KEYSTORE_PASSWORD, UPLOAD_KEY_ALIAS, UPLOAD_KEY_PASSWORD
-#                                  zusaetzlich das Play-Store-Bundle (AAB)
-#   Secret PLAY_SERVICE_ACCOUNT_JSON  Dienstkonto der Play Console: Push auf main laedt das AAB in den internen Test
+#   Umgebung "play" (nur Branch main zugelassen) mit den Secrets UPLOAD_KEYSTORE_B64, UPLOAD_KEYSTORE_PASSWORD,
+#                                  UPLOAD_KEY_ALIAS, UPLOAD_KEY_PASSWORD und PLAY_SERVICE_ACCOUNT_JSON
+# Secrets bekommen PRs aus Forks nie; Upload-Schluessel und Dienstkonto braucht nur der Job "play" auf main,
+# das signierte Bundle wird nie als Artefakt abgelegt. Fehlgeschlagener Upload: "Re-run jobs" (bleibt ein push).
 
-# Reine Webseiten-Aenderungen (site/) bauen keine App und laden nichts in den Play-Store
+# Reine Webseiten- und Doku-Aenderungen (site/, docs/, intern/, *.md) bauen keine App
 on:
   push:
-    branches: [main]
-    paths-ignore: ["site/**", ".github/workflows/pages.yml"]
+    branches: [main, "pruefung/**"]
+    paths-ignore: ["site/**", ".github/workflows/pages.yml", "docs/**", "intern/**", "**/*.md"]
   pull_request:
-    paths-ignore: ["site/**", ".github/workflows/pages.yml"]
+    paths-ignore: ["site/**", ".github/workflows/pages.yml", "docs/**", "intern/**", "**/*.md"]
   workflow_dispatch:
+
+# Ein neuer Push auf denselben PR/Pruef-Branch bricht den laufenden Build ab; Laeufe auf main laufen zu Ende
+# (jeder Stand auf main geht in den internen Test von Google Play)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Nur lesen: der Lauf baut und laedt Artefakte hoch, schreibt nichts ins Repo
 permissions:
   contents: read
 
+env:
+  VERSION_OFFSET: ${{ vars.VERSION_OFFSET || '100' }}
+
 jobs:
   apk:
+    # privates Repo: nur von Hand gestartet
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     env:
-      VERSION_OFFSET: ${{ vars.VERSION_OFFSET || '100' }}
-      # Play-Store-Bundle nur, wenn der Upload-Schluessel als Secret hinterlegt ist
-      HAS_UPLOAD_KEY: ${{ secrets.UPLOAD_KEYSTORE_B64 != '' }}
       HAS_SIDELOAD_KEY: ${{ secrets.SIDELOAD_KEYSTORE_B64 != '' }}
-      HAS_PLAY_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+      # Artefakte im privaten Repo nur 1 Tag (Speicher-Kontingent des Kontos), im oeffentlichen 14 Tage
+      KEEP_DAYS: ${{ github.event.repository.private && '1' || '14' }}
     steps:
       - uses: actions/checkout@v7
 
       # gradle-wrapper.jar muss ein offizielles Gradle-Release sein
       - uses: gradle/actions/wrapper-validation@v6
 
+      # Die WireGuard-Bibliothek (Go-Tests + gomobile, ~5-7 min) nur neu bauen, wenn sich der Go-Kern
+      # oder sein Bauweg geaendert hat; sonst AAR und Go-Lizenzliste aus dem Cache. Die Ziele sind Teil
+      # des Schluessels, weil der Handstart zusaetzlich x86_64 baut.
+      - name: WireGuard-Bibliothek aus dem Cache
+        id: aar
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/libs/wgbridge.aar
+            app/src/main/assets/licenses_go.txt
+          key: wgbridge-${{ github.event_name == 'workflow_dispatch' && 'arm64-arm-amd64' || 'arm64-arm' }}-${{ hashFiles('wgbridge/**', 'build-go.sh', 'tools/licenses.py') }}
+
       - uses: actions/setup-go@v7
+        if: steps.aar.outputs.cache-hit != 'true'
         with:
           go-version-file: wgbridge/go.mod
           cache-dependency-path: wgbridge/go.sum
@@ -62,6 +88,7 @@ jobs:
       # Von Hand gestartet: zusaetzlich x86_64 fuer den Android-Emulator; ARM-Uebersetzung
       # im Emulator reicht fuer den Go-Kern nicht (SIGILL)
       - name: WireGuard-Bibliothek (Go-Tests + gomobile)
+        if: steps.aar.outputs.cache-hit != 'true'
         env:
           GOMOBILE_TARGETS: ${{ github.event_name == 'workflow_dispatch' && 'android/arm64,android/arm,android/amd64' || 'android/arm64,android/arm' }}
         run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" ./build-go.sh
@@ -90,7 +117,7 @@ jobs:
           # app-release.apk (signiert) oder app-release-unsigned.apk
           path: app/build/outputs/apk/release/app-release*.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ env.KEEP_DAYS }}
 
       - name: Emulator-APK (x86_64, nur von Hand gestartet)
         if: github.event_name == 'workflow_dispatch'
@@ -110,10 +137,57 @@ jobs:
           name: HomeHyrax-apk-x86_64
           path: app-release*-x86_64.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ env.KEEP_DAYS }}
+
+      - name: Schluessel entfernen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sideload.jks"
+
+  # Jeder Stand auf main des oeffentlichen Repos geht automatisch in den internen Test von Google Play;
+  # Tester bekommen ihn als normales Update. Produktion bleibt Handarbeit in der Play Console.
+  # Eigener Job in der Umgebung "play": nur dort liegen Upload-Schluessel und Dienstkonto, und die Umgebung
+  # laesst nur main zu. Gleicher Lauf = gleiche versionCode wie die APK; Bibliothek aus dem Cache des Build-Jobs.
+  play:
+    needs: apk
+    if: ${{ !github.event.repository.private && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    environment: play
+    env:
+      HAS_UPLOAD_KEY: ${{ secrets.UPLOAD_KEYSTORE_B64 != '' }}
+      HAS_PLAY_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - name: Ohne Upload-Schluessel oder Dienstkonto kein Upload
+        if: env.HAS_UPLOAD_KEY != 'true' || env.HAS_PLAY_ACCOUNT != 'true'
+        run: echo "::warning::Umgebung 'play' unvollstaendig (Upload-Schluessel/Dienstkonto) – kein Upload in den internen Test"
+
+      - uses: actions/checkout@v7
+        if: env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+
+      - name: WireGuard-Bibliothek aus dem Cache des Build-Jobs
+        if: env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            app/libs/wgbridge.aar
+            app/src/main/assets/licenses_go.txt
+          # gleicher Schluessel wie im Build-Job (dort ohne Handstart immer arm64-arm)
+          key: wgbridge-arm64-arm-${{ hashFiles('wgbridge/**', 'build-go.sh', 'tools/licenses.py') }}
+          fail-on-cache-miss: true
+
+      - uses: actions/setup-java@v6
+        if: env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # NDK auch hier: Gradle entfernt damit die Debug-Symbole aus den .so im Bundle (wie im Build-Job)
+      - name: SDK + NDK
+        if: env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358" > /dev/null
 
       - name: Store-Bundle (AAB, mit Upload-Schluessel)
-        if: env.HAS_UPLOAD_KEY == 'true'
+        if: env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
         env:
           UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
           UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
@@ -126,20 +200,10 @@ jobs:
 
       - name: Schluessel entfernen
         if: always()
-        run: rm -f "$RUNNER_TEMP/sideload.jks" "$RUNNER_TEMP/upload.jks"
+        run: rm -f "$RUNNER_TEMP/upload.jks"
 
-      - uses: actions/upload-artifact@v7
-        if: env.HAS_UPLOAD_KEY == 'true'
-        with:
-          name: HomeHyrax-aab
-          path: app/build/outputs/bundle/release/app-release.aab
-          retention-days: 30
-
-      # Jeder Stand auf main geht automatisch in den internen Test von Google Play; Tester bekommen ihn
-      # als normales Update. Nur Play-signierte Builds lassen sich ueber die Play-Version installieren.
-      # Produktion bleibt Handarbeit in der Play Console (Release aus dem internen Test uebernehmen).
       - name: Google Play, interner Test
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        if: env.HAS_UPLOAD_KEY == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
