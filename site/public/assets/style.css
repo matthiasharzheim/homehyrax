@@ -128,6 +128,26 @@ h1 { font: 800 clamp(40px, 6vw, 70px)/1.04 var(--head); letter-spacing: -1.5px; 
 .pill .gold { color: var(--gold); }
 .pill .green { color: var(--green); }
 
+/* Video im Handy oben: Play-Knopf auf dem Screenshot, beim Abspielen Handy gerade, Plaketten weg */
+.phone .screen { position: relative; }
+.vplay {
+  position: absolute; left: 50%; bottom: 15%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px;
+  padding: 8px 18px 8px 8px; border-radius: 40px; border: 1.5px solid var(--cyan); cursor: pointer; white-space: nowrap;
+  background: rgba(22, 27, 33, .88); color: #fff; font: 700 15px var(--head);
+  box-shadow: 0 0 34px rgba(63, 216, 234, .45), 0 12px 28px rgba(0, 0, 0, .5); backdrop-filter: blur(6px);
+}
+.vplay:hover { background: rgba(30, 38, 46, .95); }
+.vring { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--cyan); color: #071317; }
+.vring svg { width: 20px; height: 20px; margin-left: 3px; }
+.vplay::before { content: ""; position: absolute; inset: -6px; border-radius: 46px; border: 2px solid var(--cyan); opacity: 0; animation: vpuls 2.4s ease-out infinite; }
+@keyframes vpuls { 0% { opacity: .7; transform: scale(.96); } 100% { opacity: 0; transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .vplay::before { display: none; } }
+.phone video { width: 100%; height: 100%; object-fit: contain; background: #0d1014; display: block; }
+.stage .phone { transition: transform .4s; }
+.stage.playing .phone { transform: rotate(0); }
+.stage .pill { transition: opacity .3s; }
+.stage.playing .pill { opacity: 0; pointer-events: none; }
+
 /* ---------- Abschnitte ---------- */
 section { position: relative; padding: 84px 0; }
 section.alt { background: linear-gradient(180deg, rgba(255, 255, 255, .018), rgba(255, 255, 255, 0)); border-top: 1px solid var(--line); }
@@ -347,6 +367,7 @@ address { font-style: normal; }
   .pill { font-size: 13.5px; padding: 9px 14px; }
   .pill.away { right: 0; }
   .pill.home { left: 0; }
+  .vplay { bottom: 25%; }
 }
 @media (max-width: 560px) {
   body { font-size: 16px; }

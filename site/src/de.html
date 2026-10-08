@@ -53,8 +53,8 @@
       <p class="lead">Smarthome, NAS, Shelly, Kameras – ein Tipp genügt. <b>Zuhause direkt, unterwegs über deinen eigenen Tunnel.</b></p>
       <div class="cta">
         <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=de"><svg><use href="#i-play"/></svg><span class="two"><small>Jetzt bei</small>Google Play</span></a>
+        <a class="btn btn-ghost" href="{{root}}assets/video/homehyrax-de.mp4" data-play><svg><use href="#i-video"/></svg>Video</a>
         <a class="btn btn-ghost" href="#guide">Anleitung</a>
-        <a class="btn btn-ghost" href="https://github.com/matthiasharzheim/homehyrax"><svg><use href="#i-github"/></svg>Quellcode</a>
       </div>
       <ul class="facts">
         <li><svg><use href="#i-check"/></svg>Kostenlos</li>
@@ -65,7 +65,9 @@
       </ul>
     </div>
     <div class="stage">
-      <div class="phone"><div><img src="{{root}}assets/img/de-home.webp" alt="HomeHyrax-Startseite mit Kamera-, Webseiten- und Schalter-Kacheln" width="540" height="1080"></div></div>
+      <div class="phone"><div class="screen"><img src="{{root}}assets/img/de-home.webp" alt="HomeHyrax-Startseite mit Kamera-, Webseiten- und Schalter-Kacheln" width="540" height="1080">
+        <button class="vplay" data-play data-src="{{root}}assets/video/homehyrax-de.mp4" data-poster="{{root}}assets/video/homehyrax-de.jpg" aria-label="Video · 1 Min. abspielen: HomeHyrax kurz erklärt"><span class="vring"><svg><use href="#i-play"/></svg></span>Video · 1 Min.</button>
+      </div></div>
       <div class="pill away"><svg class="gold"><use href="#i-lock"/></svg>Unterwegs · über WireGuard</div>
       <div class="pill home"><svg class="green"><use href="#i-home"/></svg>Zuhause · direkt</div>
     </div>
@@ -518,7 +520,7 @@ export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
         <p class="muted" style="font-size:18px;margin-bottom:28px">Kostenlos, Open Source, ohne System-VPN.</p>
         <div class="cta">
           <a class="btn btn-primary" href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=de"><svg><use href="#i-play"/></svg><span class="two"><small>Jetzt bei</small>Google Play</span></a>
-          <a class="btn btn-ghost" href="https://youtu.be/3NmrLRUmTbg"><svg><use href="#i-video"/></svg>Video ansehen</a>
+          <a class="btn btn-ghost" href="{{root}}assets/video/homehyrax-de.mp4" data-play><svg><use href="#i-video"/></svg>Video ansehen</a>
           <a class="btn btn-ghost" href="https://github.com/matthiasharzheim/homehyrax"><svg><use href="#i-github"/></svg>GitHub</a>
         </div>
       </div>
@@ -539,6 +541,7 @@ export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
         <ul>
           <li><a href="https://play.google.com/store/apps/details?id=de.camperflower.homehyrax&amp;hl=de">Google Play</a></li>
           <li><a href="#guide">Anleitung</a></li>
+          <li><a href="https://youtu.be/3NmrLRUmTbg">Video auf YouTube</a></li>
           <li><a href="#help">Hilfe</a></li>
           <li><a href="#faq">FAQ</a></li>
         </ul>

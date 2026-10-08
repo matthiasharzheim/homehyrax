@@ -90,4 +90,34 @@
     }, { rootMargin: "-20% 0px -70% 0px" });
     Object.keys(map).forEach(function (id) { var s = document.getElementById(id); if (s) io.observe(s); });
   }
+
+  // Video im Handy oben: erst beim Klick laden (kein Datenverbrauch vorher), selbst gehostet (keine Dritten).
+  // Alle Tasten mit data-play starten dasselbe Video und scrollen zum Handy.
+  var vbtn = document.querySelector(".vplay");
+  if (vbtn) {
+    var screen = vbtn.parentNode, stage = screen.closest(".stage"), video = null;
+    function play(e) {
+      if (e) e.preventDefault();
+      if (!video) {
+        video = document.createElement("video");
+        video.src = vbtn.getAttribute("data-src");
+        video.poster = vbtn.getAttribute("data-poster");
+        video.controls = true;
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        video.addEventListener("ended", function () { stage.classList.remove("playing"); });
+        screen.innerHTML = "";
+        screen.appendChild(video);
+        // Tastatur: der Knopf ist weg, Fokus auf das Video statt auf body
+        if (e && e.currentTarget === vbtn) video.focus();
+      }
+      stage.classList.add("playing");
+      var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      stage.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+    }
+    var starts = document.querySelectorAll("[data-play]");
+    for (var k = 0; k < starts.length; k++) starts[k].addEventListener("click", play);
+  }
 })();
