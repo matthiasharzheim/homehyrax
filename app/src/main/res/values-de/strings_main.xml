@@ -256,4 +256,7 @@
     <string name="share_group_wg">WireGuard</string>
     <string name="share_group_ts">Tailscale – als Gast nur im Netzwerk</string>
     <string name="share_group_none">Ohne VPN – nur im Netzwerk</string>
+    <string name="guest_valid_until_pick">Bis Datum …</string>
+    <string name="guest_valid_until">Bis %1$s</string>
+    <string name="guest_valid_past">Dieses Datum ist schon vorbei – bitte neu wählen.</string>
 </resources>

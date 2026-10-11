@@ -132,6 +132,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -149,6 +150,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -164,6 +169,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -2106,6 +2112,9 @@ class MainActivity : FragmentActivity() {
         var asGuest by rememberSaveable { mutableStateOf(true) }
         var label by rememberSaveable { mutableStateOf("") }
         var days by rememberSaveable { mutableIntStateOf(0) }
+        // "Bis Datum": gewaehlter Tag (Epoch-Tag), gilt inklusive - bis 23:59:59 Ortszeit; -1 = keiner
+        var untilDay by rememberSaveable { mutableLongStateOf(-1L) }
+        var pickDate by remember { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
         var error by remember { mutableStateOf<String?>(null) }
         // Rueckfallebene: Schluesseldienst aus/nicht erreichbar -> Vollzugriff wie frueher direkt (dauerhaft gueltig)
@@ -2185,7 +2194,15 @@ class MainActivity : FragmentActivity() {
                             Row(Modifier.fillMaxWidth().clickable { chosen = if (a.id in chosen) chosen - a.id else chosen + a.id },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(a.id in chosen, { on -> chosen = if (on) chosen + a.id else chosen - a.id })
-                                Text(a.name)
+                                // Art wie auf der Kachel: Schalter / Kamera / Webseite
+                                Icon(when { a.isAction -> Icons.Filled.TouchApp; a.isCamera -> Icons.Filled.Videocam; else -> Icons.Filled.Language },
+                                    null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(a.name)
+                                    Text(stringResource(when { a.isAction -> R.string.main_kind_action; a.isCamera -> R.string.main_kind_camera; else -> R.string.main_kind_web }),
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }
@@ -2202,7 +2219,31 @@ class MainActivity : FragmentActivity() {
                         Text(stringResource(R.string.guest_valid), fontWeight = FontWeight.SemiBold)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(0 to R.string.guest_valid_open, 1 to R.string.guest_valid_day, 7 to R.string.guest_valid_week, 30 to R.string.guest_valid_month)
-                                .forEach { (d, res) -> Pick(days == d, stringResource(res), null) { days = d } }
+                                .forEach { (d, res) -> Pick(untilDay < 0 && days == d, stringResource(res), null) { days = d; untilDay = -1L } }
+                            Pick(untilDay >= 0,
+                                if (untilDay >= 0) stringResource(R.string.guest_valid_until,
+                                    java.time.LocalDate.ofEpochDay(untilDay).format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)))
+                                else stringResource(R.string.guest_valid_until_pick), Icons.Filled.CalendarMonth) { pickDate = true }
+                        }
+                        if (pickDate) {
+                            val today = java.time.LocalDate.now().toEpochDay()
+                            val state = rememberDatePickerState(
+                                initialSelectedDateMillis = (if (untilDay >= 0) untilDay else today + 7) * 86_400_000L,
+                                selectableDates = object : SelectableDates {
+                                    // ab heute, hoechstens 5 Jahre (Grenze des Schluesseldienstes)
+                                    override fun isSelectableDate(utcTimeMillis: Long) =
+                                        utcTimeMillis / 86_400_000L in today..(today + 5 * 365)
+                                })
+                            DatePickerDialog(
+                                onDismissRequest = { pickDate = false },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        state.selectedDateMillis?.let { untilDay = it / 86_400_000L; error = null }
+                                        pickDate = false
+                                    }) { Text(stringResource(R.string.main_ok)) }
+                                },
+                                dismissButton = { TextButton(onClick = { pickDate = false }) { Text(stringResource(R.string.main_cancel)) } },
+                            ) { DatePicker(state) }
                         }
                     } else {
                         Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp)) {
@@ -2229,11 +2270,20 @@ class MainActivity : FragmentActivity() {
                     // 3. Teilen
                     Button(
                         enabled = !busy && pick.isNotEmpty() && label.isNotBlank(),
-                        onClick = {
+                        onClick = click@{
+                            // Datum inklusive: bis zum Ende dieses Tages (Ortszeit). Liegt es inzwischen in der
+                            // Vergangenheit (Seite ueber Mitternacht offen), nicht still kuerzen, sondern Hinweis
+                            val untilLeft = if (untilDay < 0 || !asGuest) null else
+                                java.time.LocalDate.ofEpochDay(untilDay).plusDays(1)
+                                    .atStartOfDay(java.time.ZoneId.systemDefault()).toEpochSecond() - 1 - System.currentTimeMillis() / 1000
+                            if (untilLeft != null && untilLeft < 300) {
+                                // nie still auf "Unbegrenzt" zurueckfallen: Datum neu waehlen lassen
+                                error = getString(R.string.guest_valid_past); pickDate = true; return@click
+                            }
                             busy = true; error = null; offerDirect = false
                             val used = ownTunnels.filter { t -> pick.any { it.tunnelId == t.id } }
                             val name = label.trim()
-                            val valid = if (days == 0) null else days * 86400L
+                            val valid = untilLeft ?: if (days == 0) null else days * 86400L
                             val guest = asGuest
                             scope.launch {
                                 runCatching {
