@@ -104,7 +104,6 @@
     <string name="main_unpin_text">Android erlaubt Apps nicht, Symbole selbst vom Startbildschirm zu nehmen.\n\nHalte das Symbol auf dem Startbildschirm gedrückt und wähle \"Entfernen\".</string>
     <string name="main_got_it">Verstanden</string>
     <string name="main_info_intro">Smarthome, NAS &amp; Co. auch von unterwegs erreichen – ohne Abo, ohne Kosten, ohne Konto bei uns. Du nutzt deinen eigenen Tunnel: WireGuard oder Tailscale.</string>
-    <string name="main_info_web">Anleitung &amp; Hilfe: %1$s</string>
     <string name="main_info_web_url">https://homehyrax.com/de/</string>
     <string name="main_info_where_title">Zuhause oder unterwegs?</string>
     <string name="main_info_where_text">• Mobile Daten → sofort Tunnel.\n• Im WLAN klopft die App kurz (max. 0,8 s) direkt bei der Adresse an. Antwort → du bist zuhause, die Seite lädt direkt, und die App merkt sich dieses WLAN.\n• In einem fremden WLAN geht sie danach sofort über den Tunnel, ohne erst anzuklopfen. Klappt der Tunnel dort nicht, versucht sie doch den direkten Weg (z. B. neuer Router).\n• Klappt das direkte Laden nicht, wechselt sie von selbst auf den Tunnel.\nDas WLAN erkennt die App an Adressbereich, Router-Adresse und Domäne – nicht am WLAN-Namen, denn den gibt Android nur mit Standort-Berechtigung heraus.</string>
@@ -260,4 +259,29 @@
     <string name="guest_valid_until">Bis %1$s</string>
     <string name="guest_valid_past">Dieses Datum ist schon vorbei – bitte neu wählen.</string>
     <string name="guest_valid_for">%1$s – gültig bis</string>
+    <string name="main_info_version">Version %1$s</string>
+    <string name="about_title">Über HomeHyrax</string>
+    <string name="about_system">System</string>
+    <string name="about_version">Version</string>
+    <string name="about_build">Build</string>
+    <string name="about_package">Paket</string>
+    <string name="about_android">Android</string>
+    <string name="about_device">Gerät</string>
+    <string name="about_core">Tunnel-Kern</string>
+    <string name="about_core_value">WireGuard-go + gVisor im App-Prozess (kein VpnService)</string>
+    <string name="about_proxy">Lokaler Proxy</string>
+    <string name="about_proxy_off">nicht gestartet</string>
+    <string name="about_keys">Schlüsseldienst</string>
+    <string name="about_keys_checking">prüfe …</string>
+    <string name="about_keys_ok">erreichbar</string>
+    <string name="about_keys_off">abgeschaltet</string>
+    <string name="about_keys_down">nicht erreichbar</string>
+    <string name="about_copy">Technische Daten kopieren</string>
+    <string name="about_copied">Kopiert</string>
+    <string name="about_links">Links</string>
+    <string name="about_guide">Anleitung &amp; Hilfe</string>
+    <string name="about_source">Quellcode</string>
+    <string name="about_privacy">Datenschutz</string>
+    <string name="about_how">So funktioniert’s</string>
+    <string name="about_company">Camperflower GmbH</string>
 </resources>

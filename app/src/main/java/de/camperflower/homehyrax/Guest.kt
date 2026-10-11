@@ -45,6 +45,18 @@ object Guest {
 
     fun isInvite(text: String?) = text?.trim()?.startsWith(PREFIX) == true
 
+    /** Zustand fuer die Seite "Ueber": "ok", "off" (abgeschaltet) oder "down" (nicht erreichbar). Netzwerk -> Hintergrund */
+    fun health(ctx: Context): Pair<String, String> {
+        val base = try { server(ctx) } catch (e: Failure) { return "off" to SIGNPOST }
+        val ok = runCatching {
+            val c = URL(base + "health").openConnection() as HttpURLConnection
+            c.connectTimeout = 5000; c.readTimeout = 5000; c.instanceFollowRedirects = false
+            try { c.responseCode == 200 && JSONObject(c.inputStream.use { it.readAtMost(4096).decodeToString() }).optBoolean("ok") }
+            finally { c.disconnect() }
+        }.getOrDefault(false)
+        return (if (ok) "ok" else "down") to base
+    }
+
     /** Schluesseldienst abgeschaltet oder nicht erreichbar: Vollzugriff dann ohne ihn anbieten (Rueckfallebene) */
     fun unavailable(e: Throwable) = (e as? Failure)?.code in setOf("service_off", "network", "server")
 

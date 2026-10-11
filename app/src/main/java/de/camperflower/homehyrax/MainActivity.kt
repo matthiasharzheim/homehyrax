@@ -132,6 +132,14 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Policy
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -209,6 +217,7 @@ class MainActivity : FragmentActivity() {
         data object Share : Page
         data object Import : Page
         data object Licenses : Page
+        data object About : Page
     }
 
     /**
@@ -384,6 +393,7 @@ class MainActivity : FragmentActivity() {
         BackHandler(enabled = page != Page.Home && page != Page.Tunnels) {
             page = when (val p = page) {
                 is Page.AddTunnel -> p.returnTo ?: Page.Tunnels
+                Page.Licenses -> Page.About   // Lizenzen werden von "Ueber" aus geoeffnet
                 else -> Page.Home
             }
         }
@@ -426,6 +436,7 @@ class MainActivity : FragmentActivity() {
             Page.Share -> SharePage()
             Page.Import -> ImportPage()
             Page.Licenses -> LicensesPage()
+            Page.About -> AboutPage()
         }
     }
 
@@ -455,7 +466,6 @@ class MainActivity : FragmentActivity() {
                             icon = { Icon(Icons.Filled.VpnKey, null, Modifier.size(20.dp)) })
                     }
                     var more by remember { mutableStateOf(false) }
-                    var info by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.main_more)) }
                         DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
@@ -465,10 +475,9 @@ class MainActivity : FragmentActivity() {
                             DropdownMenuItem(text = { Text(stringResource(R.string.main_import_title)) }, leadingIcon = { Icon(Icons.Filled.QrCodeScanner, null) },
                                 onClick = { more = false; page = Page.Import })
                             DropdownMenuItem(text = { Text(stringResource(R.string.main_menu_info)) }, leadingIcon = { Icon(Icons.Filled.Info, null) },
-                                onClick = { more = false; info = true })
+                                onClick = { more = false; page = Page.About })
                         }
                     }
-                    if (info) InfoDialog { info = false }
                 }
                 HorizontalDivider()
                 }
@@ -1330,46 +1339,146 @@ class MainActivity : FragmentActivity() {
         return runCatching { startActivity(mail) }.isSuccess || runCatching { startActivity(plain) }.isSuccess
     }
 
-    /** Kurze Beschreibung: wozu die App da ist und wie sie "zuhause" erkennt. */
+    /**
+     * "Ueber HomeHyrax": Kopf mit Logo und Version, technische Daten (fuer Rueckfragen kopierbar), Links,
+     * Funktionsweise aufklappbar, Kontakt und Impressum.
+     */
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun InfoDialog(onClose: () -> Unit) {
-        @Composable fun H(t: String) = Text(t, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
-        @Composable fun P(t: String) = Text(t, style = MaterialTheme.typography.bodyMedium)
-        AlertDialog(
-            onDismissRequest = onClose,
-            icon = { Icon(Icons.Filled.Info, null) },
-            title = { Text(stringResource(R.string.app_name)) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    P(stringResource(R.string.main_info_intro))
-                    // Anleitung auf der Webseite, je Sprache eigene Adresse
-                    val web = stringResource(R.string.main_info_web_url)
-                    TextButton(onClick = {
-                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(web))) }
-                    }, contentPadding = PaddingValues(0.dp)) {
-                        Text(stringResource(R.string.main_info_web, web.removePrefix("https://").trimEnd('/')))
-                    }
-                    H(stringResource(R.string.main_info_where_title))
-                    P(stringResource(R.string.main_info_where_text))
-                    H(stringResource(R.string.main_info_wg_ts_title))
-                    P(stringResource(R.string.main_info_wg_ts_text))
-                    H(stringResource(R.string.main_info_novpn_title))
-                    P(stringResource(R.string.main_info_novpn_text))
-                    H(stringResource(R.string.main_info_security_title))
-                    P(stringResource(R.string.main_info_security_text))
-                    H(stringResource(R.string.main_info_contact_title))
-                    P(stringResource(R.string.main_info_contact_text))
-                    val mail = stringResource(R.string.main_info_mail)
-                    TextButton(onClick = {
-                        runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$mail"))) }
-                    }, contentPadding = PaddingValues(0.dp)) { Text(mail) }
-                    H(stringResource(R.string.main_info_imprint_title))
-                    P(stringResource(R.string.main_info_imprint_text))
-                }
-            },
-            confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.main_ok)) } },
-            dismissButton = { TextButton(onClick = { onClose(); page = Page.Licenses }) { Text(stringResource(R.string.main_licenses)) } },
+    private fun AboutPage() {
+        val ctx = LocalContext.current
+        val clipboard = LocalClipboardManager.current
+        val logo = remember { runCatching { packageManager.getApplicationIcon(packageName).toBitmap(192, 192).asImageBitmap() }.getOrNull() }
+        // Schluesseldienst live pruefen (Seite offen = einmal)
+        val keys by produceState<Pair<String, String>?>(null) { value = withContext(Dispatchers.IO) { Guest.health(ctx) } }
+        val keysText = when (keys?.first) {
+            null -> stringResource(R.string.about_keys_checking)
+            "ok" -> stringResource(R.string.about_keys_ok)
+            "off" -> stringResource(R.string.about_keys_off)
+            else -> stringResource(R.string.about_keys_down)
+        } + (keys?.second?.let { " · " + Uri.parse(it).host.orEmpty() } ?: "")
+        val proxy = Net.proxyPort.takeIf { it > 0 }?.let { "127.0.0.1:$it" } ?: stringResource(R.string.about_proxy_off)
+        val rows = listOf(
+            stringResource(R.string.about_version) to BuildConfig.VERSION_NAME,
+            stringResource(R.string.about_build) to BuildConfig.VERSION_CODE.toString(),
+            stringResource(R.string.about_package) to BuildConfig.APPLICATION_ID,
+            stringResource(R.string.about_android) to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            stringResource(R.string.about_device) to "${Build.MANUFACTURER} ${Build.MODEL}",
+            stringResource(R.string.about_core) to stringResource(R.string.about_core_value),
+            stringResource(R.string.about_proxy) to proxy,
+            stringResource(R.string.about_keys) to keysText,
         )
+        fun open(url: String) { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.about_title)) },
+                    navigationIcon = { IconButton(onClick = { page = Page.Home }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) } },
+                )
+            },
+        ) { pad ->
+            Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Kopf
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    logo?.let { Image(it, null, Modifier.size(64.dp).clip(RoundedCornerShape(16.dp))) }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.main_info_version, BuildConfig.VERSION_NAME) + " · " + stringResource(R.string.about_build) + " ${BuildConfig.VERSION_CODE}",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.about_company), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Text(stringResource(R.string.main_info_intro), style = MaterialTheme.typography.bodyMedium)
+
+                // Technische Daten
+                AboutCard(stringResource(R.string.about_system)) {
+                    rows.forEach { (k, v) ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                            Text(k, Modifier.width(120.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(v, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+                        }
+                    }
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(rows.joinToString("\n") { "${it.first}: ${it.second}" }))
+                        toast(getString(R.string.about_copied))
+                    }, contentPadding = PaddingValues(0.dp)) {
+                        Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.about_copy))
+                    }
+                }
+
+                // Links
+                AboutCard(stringResource(R.string.about_links)) {
+                    val web = stringResource(R.string.main_info_web_url)
+                    AboutLink(Icons.AutoMirrored.Filled.MenuBook, stringResource(R.string.about_guide), web.removePrefix("https://").trimEnd('/')) { open(web) }
+                    AboutLink(Icons.Filled.Code, stringResource(R.string.about_source), "github.com/matthiasharzheim/homehyrax") { open(SOURCE_URL) }
+                    AboutLink(Icons.Filled.Policy, stringResource(R.string.about_privacy), "camperflower.de") { open(PRIVACY_URL) }
+                    AboutLink(Icons.Filled.Description, stringResource(R.string.main_licenses), "Apache-2.0") { page = Page.Licenses }
+                }
+
+                // Funktionsweise, aufklappbar
+                AboutCard(stringResource(R.string.about_how)) {
+                    listOf(
+                        R.string.main_info_where_title to R.string.main_info_where_text,
+                        R.string.main_info_wg_ts_title to R.string.main_info_wg_ts_text,
+                        R.string.main_info_novpn_title to R.string.main_info_novpn_text,
+                        R.string.main_info_security_title to R.string.main_info_security_text,
+                    ).forEach { (t, body) -> AboutExpand(stringResource(t), stringResource(body)) }
+                }
+
+                // Kontakt und Impressum
+                AboutCard(stringResource(R.string.main_info_contact_title)) {
+                    val mail = stringResource(R.string.main_info_mail)
+                    Text(stringResource(R.string.main_info_contact_text), style = MaterialTheme.typography.bodyMedium)
+                    AboutLink(Icons.Filled.Email, mail, null) {
+                        runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$mail"))) }
+                    }
+                    AboutExpand(stringResource(R.string.main_info_imprint_title), stringResource(R.string.main_info_imprint_text))
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    @Composable
+    private fun AboutCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.padding(16.dp)) {
+                Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 6.dp))
+                content()
+            }
+        }
+    }
+
+    @Composable
+    private fun AboutLink(icon: ImageVector, title: String, sub: String?, onClick: () -> Unit) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title)
+                sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+
+    @Composable
+    private fun AboutExpand(title: String, body: String) {
+        var open by rememberSaveable(title) { mutableStateOf(false) }
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (open) Text(body, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+        }
     }
 
     @Composable
@@ -1871,7 +1980,7 @@ class MainActivity : FragmentActivity() {
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(R.string.main_licenses)) },
-                    navigationIcon = { IconButton(onClick = { page = Page.Home }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) } },
+                    navigationIcon = { IconButton(onClick = { page = Page.About }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) } },
                 )
             },
         ) { pad ->
@@ -2457,6 +2566,9 @@ class MainActivity : FragmentActivity() {
 
         /** Wie Uri.decode, aber ein rohes % (nicht %XX) bleibt erhalten. */
         fun decodeCred(s: String): String = Uri.decode(s.replace(Regex("%(?![0-9a-fA-F]{2})"), "%25"))
+
+        private const val SOURCE_URL = "https://github.com/matthiasharzheim/homehyrax"
+        private const val PRIVACY_URL = "https://camperflower.de/homehyrax-datenschutz/"
 
         /** Entsperren gilt so lange fuer weitere geschuetzte Seiten. */
         private const val UNLOCK_VALID_MS = 60_000L
