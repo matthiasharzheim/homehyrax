@@ -104,6 +104,11 @@ object Net {
 
     /** Tunnel bleibt nach dem Verlassen der App noch so lange stehen. */
     private const val LINGER_MS = 90_000L
+    /** Gast-Tunnel nur kurz nachlaufen lassen: der Gast teilt sich die Router-Verbindung mit dem Besitzer,
+     *  gleichzeitige Nutzung stoert beide - so ueberschneiden sich die Zugriffe seltener */
+    private const val GUEST_LINGER_MS = 10_000L
+    /** Tunnel-ids, die Gastzugaenge sind (beim Verbinden gemerkt, release() liest keine Dateien) */
+    private val guestIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     /** Laufender Gast-Tunnel: so oft beim Schluesseldienst nachfragen, ob der Zugang noch gilt */
     private const val GUEST_CHECK_MS = 60_000L
@@ -367,7 +372,7 @@ object Net {
             // Gast: Go-Meldungen koennen Router-Adresse/Konfiguration enthalten
             return@withContext if (t.isGuest) app.getString(R.string.guest_err_no_reply) else friendly(e.message)
         }
-        if (t.isGuest) watchGuest(t)
+        if (t.isGuest) { guestIds += t.id; watchGuest(t) } else guestIds -= t.id
         if (Wgbridge.waitHandshake(t.id, 7000)) null
         // Gast: Adresse des Routers nicht anzeigen
         else if (t.isGuest) app.getString(R.string.guest_err_no_reply)
@@ -446,7 +451,7 @@ object Net {
         if (n <= 0) {
             stopJobs[tunnelId]?.cancel()
             stopJobs[tunnelId] = scope.launch {
-                delay(LINGER_MS)
+                delay(if (tunnelId in guestIds) GUEST_LINGER_MS else LINGER_MS)
                 // nur die Pruefung unter der Sperre; das Stoppen (Tailscale kann dauern) ausserhalb,
                 // sonst warten acquire()/release() im Main-Thread darauf (ANR)
                 val stop = synchronized(this@Net) { (users[tunnelId] ?: 0) <= 0 }
