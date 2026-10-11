@@ -252,4 +252,6 @@
     <string name="share_full_taken">taken over – cannot be revoked</string>
     <string name="share_full_delete_text">If not opened yet, the invitation becomes invalid. Full access already taken over stays.</string>
     <string name="share_qr_too_big">Too big for a QR code – please send as a file.</string>
+    <string name="share_direct">Share without key service (valid forever)</string>
+    <string name="share_direct_ready">Ready for %1$s – this file stays valid forever, only send it to people you trust.</string>
 </resources>

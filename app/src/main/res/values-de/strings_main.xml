@@ -252,4 +252,6 @@
     <string name="share_full_taken">übernommen – nicht entziehbar</string>
     <string name="share_full_delete_text">Noch nicht geöffnet: Die Einladung wird ungültig. Schon übernommener Vollzugriff bleibt.</string>
     <string name="share_qr_too_big">Zu groß für einen QR-Code – bitte als Datei senden.</string>
+    <string name="share_direct">Ohne Schlüsseldienst teilen (dauerhaft gültig)</string>
+    <string name="share_direct_ready">Fertig für %1$s – diese Datei bleibt dauerhaft gültig, nur an Vertraute senden.</string>
 </resources>

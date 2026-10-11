@@ -158,7 +158,7 @@ check('Ablauf verlaengern', $s === 200, $r);
 [$s, $r] = $dev->req($t, 'key', $inv['id']);
 check('nach Verlaengerung', $s === 200, $r);
 $t->call('/v1/manage', ['owner' => $owner, 'id' => $inv['id'], 'action' => 'expires', 'expires' => null]);
-$t->now += 86400 * 400;
+$t->now += 86400 * 300;   // < 12 Monate: sonst greift das Loeschen ungenutzter Einladungen
 [$s, $r] = $dev->req($t, 'key', $inv['id']);
 check('Ablauf entfernt', $s === 200, $r);
 [$s, $r] = create($t, $owner, ['expires' => $t->now - 1]);
@@ -262,6 +262,22 @@ $t->svc->housekeeping();
 check('ungebundene Einladung nach 30 Tagen weg', !in_array($inv7['id'], array_column($r['invites'], 'id'), true)
     && in_array($inv6['id'], array_column($r['invites'], 'id'), true)
     && in_array($inv8['id'], array_column($r['invites'], 'id'), true), $r);
+
+// geoeffnet, aber 12 Monate ungenutzt -> geloescht; genutzt -> bleibt
+$t8 = new T();
+[$s, $a8] = create($t8, $owner);
+[$s, $b8] = create($t8, $owner);
+$d8a = new Device();
+$d8b = new Device();
+$d8a->req($t8, 'bind', $a8['id'], ['bind' => $a8['bind'], 'pub' => b64u($d8a->pub)]);
+$d8b->req($t8, 'bind', $b8['id'], ['bind' => $b8['bind'], 'pub' => b64u($d8b->pub)]);
+$t8->now += 300 * 86400;
+$d8b->req($t8, 'key', $b8['id']);
+$t8->now += 70 * 86400;
+$t8->svc->housekeeping();
+[$s, $r] = $t8->call('/v1/info', ['owner' => $owner]);
+$ids8 = array_column($r['invites'], 'id');
+check('12 Monate ungenutzt geloescht, genutzt bleibt', !in_array($a8['id'], $ids8, true) && in_array($b8['id'], $ids8, true), $r);
 
 // --- Eingaben ---
 foreach ([

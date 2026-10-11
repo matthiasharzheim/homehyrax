@@ -13,6 +13,10 @@ https://homehyrax.com/keys.json  →  {"v": 1, "keys": "https://camperflower.de/
 
 The app only accepts service addresses on hosts it knows, so a tampered signpost cannot redirect it.
 
+To switch the service off for good, publish `{"v": 1, "status": "off"}`. Guests then get a clear message and
+their guest connections end; full access can still be shared directly from phone to phone (permanent file, as before
+the key service existed). The rest of the app never depends on the service.
+
 ## Protection
 
 | Layer | What it does |
@@ -26,7 +30,8 @@ The app only accepts service addresses on hosts it knows, so a tampered signpost
 Stored keys are encrypted with a master key (`sodium_crypto_secretbox`). Owners are identified only by the
 SHA-256 of a random 32-byte token held by their app. IP addresses are kept only as salted hashes for rate
 limiting (IPv6 per /64; kept until the end of the hour or day window). Expired invites are deleted 30 days after
-expiry; invites that were never opened after 30 days (with a later expiry date: after 180 days at most). Clean-up runs at most every 10 minutes, triggered by the next request.
+expiry; invites that were never opened after 30 days (with a later expiry date: after 180 days at most); opened
+invites that were not used for 12 months. Clean-up runs at most every 10 minutes, triggered by the next request.
 
 Blocking stops future key requests. A key that a modified app has already read out cannot be taken back – that is
 what Play Integrity is for; for full certainty the owner also removes the guest's WireGuard peer in the router.

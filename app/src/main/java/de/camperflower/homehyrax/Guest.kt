@@ -37,10 +37,16 @@ object Guest {
     /** Nur diese Hosts darf der Wegweiser nennen (ein manipulierter Wegweiser lenkt sonst auf einen fremden Dienst) */
     private val ALLOWED_HOSTS = setOf("camperflower.de", "homehyrax.com")
     private const val SIGNPOST_MAX_AGE_MS = 24 * 3600_000L
+    /** nach einem Fehler den Wegweiser hoechstens so oft neu lesen */
+    private const val SIGNPOST_RECHECK_MS = 5 * 60_000L
+    private const val SIGNPOST_OFF_MAX_AGE_MS = 3600_000L
     /** Vollzugriff-Einladung: muss innerhalb dieser Zeit geoeffnet werden, danach ist die Datei wertlos */
     const val FULL_VALID_S = 7 * 86400L
 
     fun isInvite(text: String?) = text?.trim()?.startsWith(PREFIX) == true
+
+    /** Schluesseldienst abgeschaltet oder nicht erreichbar: Vollzugriff dann ohne ihn anbieten (Rueckfallebene) */
+    fun unavailable(e: Throwable) = (e as? Failure)?.code in setOf("service_off", "network", "server")
 
     /** Fehler vom Schluesseldienst (code wie in keyserver/README.md) oder "network" */
     class Failure(val code: String) : Exception(code)
@@ -55,6 +61,7 @@ object Guest {
         "denied" -> R.string.guest_err_format
         "rate_limit" -> R.string.guest_err_busy
         "network" -> R.string.guest_err_network
+        "service_off" -> R.string.guest_err_service_off
         "imported" -> R.string.guest_err_imported
         "format" -> R.string.guest_err_format
         else -> R.string.guest_err_server
@@ -260,9 +267,13 @@ object Guest {
         val (status, res) = try {
             post(server(ctx) + action, req.toString())
         } catch (e: IOException) {
+            server(ctx, force = true)   // abgeschaltet? dann service_off statt "nicht erreichbar"
             throw Failure("network")
         }
-        val o = runCatching { JSONObject(res) }.getOrElse { throw Failure("server") }
+        val o = runCatching { JSONObject(res) }.getOrElse {
+            server(ctx, force = true)   // Dienst entfernt (z. B. 404-Seite des Hosters)?
+            throw Failure("server")
+        }
         if (status == 200) return o
         val code = o.optString("error", "server")
         if (code == "clock" && retry && o.has("now")) {
@@ -290,21 +301,44 @@ object Guest {
         }
     }
 
-    /** Adresse des Schluesseldienstes aus dem Wegweiser (24 h gemerkt; nicht erreichbar -> letzter bzw. Standard). */
-    private fun server(ctx: Context): String {
+    /**
+     * Adresse des Schluesseldienstes aus dem Wegweiser (24 h gemerkt; nicht erreichbar -> letzter bzw. Standard).
+     * Rueckfallebene: steht im Wegweiser "status": "off", ist der Dienst abgeschaltet -> Failure("service_off");
+     * Gaeste bekommen dann eine klare Meldung, Vollzugriff laesst sich weiter ohne Dienst teilen (Share.export).
+     * force = Wegweiser sofort neu lesen (nach einem Fehler: vielleicht wurde der Dienst gerade abgeschaltet).
+     */
+    private fun server(ctx: Context, force: Boolean = false): String {
         val prefs = ctx.getSharedPreferences("guest", Context.MODE_PRIVATE)
         val cached = prefs.getString("server", null)
-        if (cached != null && System.currentTimeMillis() - prefs.getLong("server_at", 0) < SIGNPOST_MAX_AGE_MS) return cached
-        val fresh = runCatching {
+        val off = prefs.getBoolean("server_off", false)
+        val now = System.currentTimeMillis()
+        val age = now - prefs.getLong("server_at", 0)
+        // "aus" nur 1 h merken: ein zurueckgestellter Wegweiser wirkt so bald wieder
+        if (!force && (cached != null || off) && age < (if (off) SIGNPOST_OFF_MAX_AGE_MS else SIGNPOST_MAX_AGE_MS)) {
+            if (off) throw Failure("service_off")
+            return cached!!
+        }
+        // nach Fehlern hoechstens alle 5 min nachsehen - auch wenn der Wegweiser selbst nicht erreichbar ist
+        if (force && now - prefs.getLong("server_try", 0) < SIGNPOST_RECHECK_MS)
+            return if (off) throw Failure("service_off") else cached ?: DEFAULT_SERVER
+        prefs.edit().putLong("server_try", now).apply()
+        val sign = runCatching {
             val c = URL(SIGNPOST).openConnection() as HttpURLConnection
             c.connectTimeout = 5000; c.readTimeout = 5000; c.instanceFollowRedirects = false
             try {
-                if (c.responseCode != 200) null
-                else JSONObject(c.inputStream.use { it.readAtMost(4096).decodeToString() }).optString("keys")
+                if (c.responseCode != 200) null else JSONObject(c.inputStream.use { it.readAtMost(4096).decodeToString() })
             } finally { c.disconnect() }
-        }.getOrNull()?.takeIf { allowed(it) }
-        if (fresh != null) prefs.edit().putString("server", fresh).putLong("server_at", System.currentTimeMillis()).apply()
-        return fresh ?: cached ?: DEFAULT_SERVER
+        }.getOrNull()
+        if (sign != null) {
+            val nowOff = sign.optString("status") == "off"
+            val url = sign.optString("keys").takeIf { allowed(it) }
+            if (nowOff || url != null) prefs.edit().putBoolean("server_off", nowOff).putString("server", url ?: cached)
+                .putLong("server_at", System.currentTimeMillis()).apply()
+            if (nowOff) throw Failure("service_off")
+            if (url != null) return url
+        }
+        if (off) throw Failure("service_off")
+        return cached ?: DEFAULT_SERVER
     }
 
     private fun allowed(url: String): Boolean {

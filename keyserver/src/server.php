@@ -13,6 +13,7 @@ const INTEGRITY_CACHE = 86400;   // Play-Integrity-Ergebnis gilt je Einladung (=
 const PURGE_AFTER = 30 * 86400;  // abgelaufene Einladungen werden 30 Tage nach Ablauf geloescht
 const HOUSEKEEPING_EVERY = 600;
 const UNOPENED_MAX = 180 * 86400;
+const IDLE_MAX = 365 * 86400;    // geoeffnete Einladungen, die so lange nicht genutzt wurden, werden geloescht
 const MAX_BODY = 16384;
 
 final class Fail extends \Exception
@@ -339,6 +340,10 @@ final class Service
         // 30 Tagen, mit Ablaufdatum spaetestens nach 180 Tagen (Einladung fuer einen spaeteren Urlaub bleibt gueltig)
         $this->db->prepare('DELETE FROM invites WHERE pubkey IS NULL AND (created < ? OR expires IS NULL AND created < ?)')
             ->execute([$now - UNOPENED_MAX, $now - PURGE_AFTER]);
+        // geoeffnet, aber 12 Monate nicht genutzt (auch gesperrte): nichts bleibt unbegrenzt liegen.
+        // CAST: COALESCE hat keine Spalten-Affinitaet, sonst vergleicht SQLite Zahl < Text (immer wahr = alles weg)
+        $this->db->prepare('DELETE FROM invites WHERE pubkey IS NOT NULL AND COALESCE(last_used, bound_at) < CAST(? AS INTEGER)')
+            ->execute([$now - IDLE_MAX]);
     }
 
     // ---- Verschluesselung der gespeicherten Schluessel ----

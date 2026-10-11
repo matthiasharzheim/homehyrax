@@ -111,4 +111,5 @@
     <string name="guest_err_imported">Diese Einladung ist schon übernommen.</string>
     <string name="guest_err_format">Das ist keine gültige Einladung.</string>
     <string name="guest_err_no_reply">Keine Antwort vom Heimnetz.</string>
+    <string name="guest_err_service_off">Der Schlüsseldienst wurde abgeschaltet. Bitte den Besitzer um Vollzugriff.</string>
 </resources>

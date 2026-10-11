@@ -2108,6 +2108,8 @@ class MainActivity : FragmentActivity() {
         var days by rememberSaveable { mutableIntStateOf(0) }
         var busy by remember { mutableStateOf(false) }
         var error by remember { mutableStateOf<String?>(null) }
+        // Rueckfallebene: Schluesseldienst aus/nicht erreichbar -> Vollzugriff wie frueher direkt (dauerhaft gueltig)
+        var offerDirect by remember { mutableStateOf(false) }
         var listVersion by remember { mutableIntStateOf(0) }
         val pick = own.filter { it.id in chosen && (!asGuest || guestOk(it)) }
         // Export-Datei gleich nach dem Teilen wieder loeschen (kurz verzoegert, falls die Ziel-App noch liest)
@@ -2199,12 +2201,27 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                     error?.let { Spacer(Modifier.height(12.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (offerDirect && !asGuest) OutlinedButton(onClick = {
+                        val used = ownTunnels.filter { t -> pick.any { it.tunnelId == t.id } }
+                        val name = label.trim()
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    Triple(getString(R.string.share_direct_ready, name),
+                                        Share.export(ctx, pick, used, withIcons = false), Share.export(ctx, pick, used, withIcons = true))
+                                }
+                            }.onSuccess { ui.shareResult = it; error = null; offerDirect = false }
+                                .onFailure { error = getString(R.string.main_err_save) }
+                        }
+                    }, enabled = !busy && pick.isNotEmpty() && label.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Text(stringResource(R.string.share_direct))
+                    }
                     Spacer(Modifier.height(20.dp))
                     // 3. Teilen
                     Button(
                         enabled = !busy && pick.isNotEmpty() && label.isNotBlank(),
                         onClick = {
-                            busy = true; error = null
+                            busy = true; error = null; offerDirect = false
                             val used = ownTunnels.filter { t -> pick.any { it.tunnelId == t.id } }
                             val name = label.trim()
                             val valid = if (days == 0) null else days * 86400L
@@ -2215,7 +2232,7 @@ class MainActivity : FragmentActivity() {
                                         Guest.create(ctx, name, pick, used, valid, full = !guest)
                                             .let { (qrText, fileText) -> Triple(getString(R.string.guest_ready, name), qrText, fileText) }
                                     }
-                                }.onSuccess { ui.shareResult = it }.onFailure { error = Guest.message(ctx, it) }
+                                }.onSuccess { ui.shareResult = it }.onFailure { error = Guest.message(ctx, it); offerDirect = Guest.unavailable(it) }
                                 busy = false
                             }
                         },

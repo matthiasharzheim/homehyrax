@@ -111,4 +111,5 @@
     <string name="guest_err_imported">This invitation is already in HomeHyrax.</string>
     <string name="guest_err_format">That\'s not a valid invitation.</string>
     <string name="guest_err_no_reply">No reply from the home network.</string>
+    <string name="guest_err_service_off">The key service has been switched off. Ask the owner for full access.</string>
 </resources>

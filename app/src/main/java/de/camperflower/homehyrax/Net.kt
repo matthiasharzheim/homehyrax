@@ -127,7 +127,7 @@ object Net {
                     delay(GUEST_CHECK_MS)
                     if (!Wgbridge.isRunning(t.id)) break
                     val e = runCatching { Guest.unlock(app, t) }.exceptionOrNull() as? Guest.Failure ?: continue
-                    if (e.code in setOf("blocked", "expired", "unknown", "not_bound", "bad_signature", "device")) {
+                    if (e.code in setOf("blocked", "expired", "unknown", "not_bound", "bad_signature", "device", "service_off")) {
                         runCatching { Wgbridge.stopTunnel(t.id) }
                         break
                     }
