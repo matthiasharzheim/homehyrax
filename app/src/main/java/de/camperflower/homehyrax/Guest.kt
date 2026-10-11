@@ -120,6 +120,13 @@ object Guest {
             .put("action", if (blocked) "block" else "activate"), sign = null)
     }
 
+    /** Gueltigkeit aendern (Unix-Sekunden, null = unbegrenzt); verlaengert auch eine abgelaufene Einladung. */
+    fun setExpires(ctx: Context, id: String, expires: Long?) {
+        call(ctx, "manage", JSONObject().put("owner", b64u(ctx.store.ownerToken())).put("id", id)
+            .put("action", "expires").put("expires", expires ?: JSONObject.NULL), sign = null)
+        ctx.store.invites().firstOrNull { it.id == id }?.let { ctx.store.saveInvite(it.copy(expires = expires)) }
+    }
+
     /** Einladung beim Schluesseldienst und hier loeschen (dort schon weg = auch gut). */
     fun delete(ctx: Context, id: String) {
         try {

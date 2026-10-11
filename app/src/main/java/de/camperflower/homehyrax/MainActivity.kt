@@ -1425,7 +1425,9 @@ class MainActivity : FragmentActivity() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
                 }
                 items(tunnels, key = { it.id }) { t ->
-                    Card(Modifier.fillMaxWidth()) {
+                    // Karte antippen = bearbeiten (wie der Stift); Tunnel-Seite zeigt Schluessel -> erst entsperren
+                    Card(Modifier.fillMaxWidth().clip(CardDefaults.shape)
+                        .clickable(enabled = !t.isGuest) { guard { page = Page.AddTunnel(null, t.id) } }) {
                         Column(Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.VpnKey, null, tint = MaterialTheme.colorScheme.primary)
@@ -1955,6 +1957,39 @@ class MainActivity : FragmentActivity() {
         )
     }
 
+    /** Gueltigkeit einer Gast-Einladung aendern: unbegrenzt oder bis Datum (Tag inklusive, Ortszeit). */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun GuestValidityDialog(inv: Invite, current: Long?, onClose: () -> Unit, onSave: (Long?) -> Unit) {
+        val zone = java.time.ZoneId.systemDefault()
+        val today = java.time.LocalDate.now().toEpochDay()
+        val initDay = current?.let { java.time.Instant.ofEpochSecond(it).atZone(zone).toLocalDate().toEpochDay() }
+            ?.takeIf { it >= today } ?: (today + 7)
+        val state = rememberDatePickerState(initialSelectedDateMillis = initDay * 86_400_000L,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis / 86_400_000L in today..(today + 5 * 365)
+            })
+        DatePickerDialog(
+            onDismissRequest = onClose,
+            confirmButton = {
+                TextButton(onClick = save@{
+                    val day = state.selectedDateMillis?.div(86_400_000L) ?: return@save
+                    onSave(java.time.LocalDate.ofEpochDay(day).plusDays(1).atStartOfDay(zone).toEpochSecond() - 1)
+                }) { Text(stringResource(R.string.main_ok)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { onSave(null) }) { Text(stringResource(R.string.guest_valid_open)) }
+                    TextButton(onClick = onClose) { Text(stringResource(R.string.main_cancel)) }
+                }
+            },
+        ) {
+            Text(stringResource(R.string.guest_valid_for, inv.label), style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 24.dp, top = 16.dp, end = 24.dp))
+            DatePicker(state, title = null)
+        }
+    }
+
     /** "Geteilt mit": verschickte Gast-Einladungen mit Zustand vom Schluesseldienst, sperren/freigeben, loeschen. */
     @Composable
     private fun GuestList(version: Int) {
@@ -1965,6 +2000,7 @@ class MainActivity : FragmentActivity() {
         var error by remember { mutableStateOf<String?>(null) }
         var busy by remember { mutableStateOf(setOf<String>()) }
         var confirmDelete by remember { mutableStateOf<Invite?>(null) }
+        var editing by remember { mutableStateOf<Invite?>(null) }
         var seq by remember { mutableIntStateOf(0) }
         LaunchedEffect(version, seq) {
             invites = withContext(Dispatchers.IO) { runCatching { store.invites() }.getOrDefault(emptyList()) }
@@ -1994,11 +2030,18 @@ class MainActivity : FragmentActivity() {
                             stringResource(when (st.status) { "blocked" -> R.string.guest_status_blocked; "expired" -> R.string.guest_status_expired; else -> R.string.guest_status_active }),
                             if (!st.bound) stringResource(R.string.guest_not_opened) else null,
                             st.lastUsed?.let { stringResource(R.string.guest_last_used, DateUtils.getRelativeTimeSpanString(it * 1000).toString()) },
-                            st.expires?.let { stringResource(R.string.guest_until, DateUtils.formatDateTime(ctx, it * 1000, DateUtils.FORMAT_SHOW_DATE)) },
                         ).joinToString(" · ")
                     }
                     if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall,
                         color = if (st?.status == "active") Color(0xFF2E7D32) else MaterialTheme.colorScheme.error)
+                    // Gueltigkeit als eigenes Feld: nur hier antippen = Gueltigkeit aendern
+                    // (Vollzugriff: nach dem Oeffnen ohnehin nicht entziehbar)
+                    if (st != null && !inv.full) TextButton(onClick = { editing = inv }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                        Icon(Icons.Filled.CalendarMonth, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(st.expires?.let { stringResource(R.string.guest_valid_until, DateUtils.formatDateTime(ctx, it * 1000, DateUtils.FORMAT_SHOW_DATE)) }
+                            ?: stringResource(R.string.guest_valid_open), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 // Schalter = Zugang an/aus; abgelaufene lassen sich nicht wieder einschalten
                 if (st != null && st.status != "expired" && !inv.full) Switch(
@@ -2016,6 +2059,13 @@ class MainActivity : FragmentActivity() {
             }
             HorizontalDivider()
         }
+        editing?.let { inv -> GuestValidityDialog(inv, states?.get(inv.id)?.expires, onClose = { editing = null }) { exp ->
+            editing = null
+            scope.launch {
+                runCatching { withContext(Dispatchers.IO) { Guest.setExpires(ctx, inv.id, exp) } }.onFailure { toast(Guest.message(ctx, it)) }
+                seq++
+            }
+        } }
         confirmDelete?.let { inv ->
             AlertDialog(
                 onDismissRequest = { confirmDelete = null },

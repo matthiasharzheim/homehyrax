@@ -259,4 +259,5 @@
     <string name="guest_valid_until_pick">Bis Datum …</string>
     <string name="guest_valid_until">Bis %1$s</string>
     <string name="guest_valid_past">Dieses Datum ist schon vorbei – bitte neu wählen.</string>
+    <string name="guest_valid_for">%1$s – gültig bis</string>
 </resources>
