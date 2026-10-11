@@ -243,7 +243,6 @@
     <string name="guest_share_full_sub">Hands over keys and passwords – cannot be taken back.</string>
     <string name="share_what">What?</string>
     <string name="share_how">How?</string>
-    <string name="share_full_only">Full access only</string>
     <string name="share_result_note">On the other phone choose “Import HomeHyrax”, then scan or open the file.</string>
     <string name="share_button">Share</string>
     <string name="guest_shared_with">Shared with</string>
@@ -254,4 +253,7 @@
     <string name="share_qr_too_big">Too big for a QR code – please send as a file.</string>
     <string name="share_direct">Share without key service (valid forever)</string>
     <string name="share_direct_ready">Ready for %1$s – this file stays valid forever, only send it to people you trust.</string>
+    <string name="share_group_wg">WireGuard</string>
+    <string name="share_group_ts">Tailscale – as guest only in your network</string>
+    <string name="share_group_none">Without VPN – only in your network</string>
 </resources>

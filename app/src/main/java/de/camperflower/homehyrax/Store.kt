@@ -345,8 +345,10 @@ class Store(private val ctx: Context) {
         val guest = l.items.firstOrNull { it.id == id }?.takeIf { it.isGuest }
         writeTunnels(l.items.filter { it.id != id }, l.broken.filter { it.optString("id") != id })
         if (guest != null) {
-            // Gast-Eintraege ohne ihren Gastzugang waeren ungeschuetzte Direkt-Kacheln -> mit loeschen
-            apps().filter { it.tunnelId == id }.forEach { deleteApp(it.id) }
+            // Gast-Eintraege ohne ihren Gastzugang waeren ungeschuetzte Direkt-Kacheln -> mit loeschen,
+            // ebenso die ohne Tunnel geteilten Eintraege derselben Einladung
+            val inv = runCatching { JSONObject(guest.config).getString("inv") }.getOrNull()
+            apps().filter { it.tunnelId == id || (inv != null && it.guest == inv && it.tunnelId == null) }.forEach { deleteApp(it.id) }
             Guest.forgetDevice(guest)
             Thread { runCatching { Wgbridge.stopTunnel(id) } }.start()
             return

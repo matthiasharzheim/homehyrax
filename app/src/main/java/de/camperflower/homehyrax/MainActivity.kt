@@ -2111,7 +2111,11 @@ class MainActivity : FragmentActivity() {
         // Rueckfallebene: Schluesseldienst aus/nicht erreichbar -> Vollzugriff wie frueher direkt (dauerhaft gueltig)
         var offerDirect by remember { mutableStateOf(false) }
         var listVersion by remember { mutableIntStateOf(0) }
-        val pick = own.filter { it.id in chosen && (!asGuest || guestOk(it)) }
+        // Als Gast: WireGuard-Eintraege mit Tunnel (sperrbar), alle anderen ohne Tunnel - die gehen beim Gast
+        // nur im eigenen Netzwerk (Adressen sind nicht geheim, geschuetzt wird der Weg von unterwegs)
+        val pick = own.filter { it.id in chosen }.map { a ->
+            if (!asGuest || guestOk(a)) a else a.copy(tunnelId = null, alwaysTunnel = false)
+        }
         // Export-Datei gleich nach dem Teilen wieder loeschen (kurz verzoegert, falls die Ziel-App noch liest)
         val sendFile = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             ui.shareFile?.let { f -> Handler(Looper.getMainLooper()).postDelayed({ f.delete() }, 30_000) }
@@ -2168,15 +2172,20 @@ class MainActivity : FragmentActivity() {
                     // 1. Was?
                     Text(stringResource(R.string.share_what), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (own.isEmpty()) Text(stringResource(R.string.main_share_no_apps), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    own.forEach { a ->
-                        val ok = !asGuest || guestOk(a)
-                        Row(Modifier.fillMaxWidth().clickable(enabled = ok) { chosen = if (a.id in chosen) chosen - a.id else chosen + a.id },
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(ok && a.id in chosen, { on -> chosen = if (on) chosen + a.id else chosen - a.id }, enabled = ok)
-                            Column {
-                                Text(a.name, color = if (ok) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (!ok) Text(stringResource(R.string.share_full_only), style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // nach Verbindungsart gruppiert: auf einen Blick, was als Gast geht (nur WireGuard)
+                    val typeOf = { a: WebApp -> ownTunnels.firstOrNull { it.id == a.tunnelId }?.type }
+                    listOf(
+                        R.string.share_group_wg to own.filter { typeOf(it) == TUNNEL_WG },
+                        R.string.share_group_ts to own.filter { typeOf(it) == TUNNEL_TS },
+                        R.string.share_group_none to own.filter { typeOf(it) != TUNNEL_WG && typeOf(it) != TUNNEL_TS },
+                    ).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
+                        Text(stringResource(title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+                        group.forEach { a ->
+                            Row(Modifier.fillMaxWidth().clickable { chosen = if (a.id in chosen) chosen - a.id else chosen + a.id },
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(a.id in chosen, { on -> chosen = if (on) chosen + a.id else chosen - a.id })
+                                Text(a.name)
                             }
                         }
                     }

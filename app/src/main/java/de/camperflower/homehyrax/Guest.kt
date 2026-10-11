@@ -178,7 +178,9 @@ object Guest {
             }
             val tunnelIds = tunnels.map { it.id }.toSet()
             // nur neue Eintraege mit Gast-Verbindung; vorhandene eigene Kacheln bleiben unberuehrt
-            val fresh = plan.apps.filter { it.id !in known && it.tunnelId in tunnelIds }
+            // mit Gast-Verbindung (sperrbar) oder ganz ohne Tunnel (geht nur im Netzwerk des Besitzers)
+            // (ohne Tunnel nur, was der Besitzer so geteilt hat - nicht WireGuard-Eintraege, deren Verbindung hier nicht ging)
+            val fresh = plan.apps.filter { it.id !in known && (it.tunnelId in tunnelIds || (it.tunnelId == null && it.id !in plan.needTunnel)) }
             // Gast-Eintrag mit gleicher Adresse, dessen Einladung nicht mehr gilt (abgelaufen, gesperrt, geloescht):
             // der neue Eintrag uebernimmt seine id (Startbildschirm-Symbol bleibt). Noch gueltige - z. B. von einem
             // anderen Besitzer mit gleicher Adresse - bleiben unberuehrt
@@ -192,7 +194,7 @@ object Guest {
                 if (gone) dead.putIfAbsent(old.url.lowercase(), old)
             }
             val idFor = fresh.associate { it.id to (dead[it.url.lowercase()]?.id ?: it.id) }
-            val apps = fresh.map { it.copy(id = idFor.getValue(it.id), guest = id, alwaysTunnel = true) }
+            val apps = fresh.map { it.copy(id = idFor.getValue(it.id), guest = id, alwaysTunnel = it.tunnelId != null) }
             val icons = plan.icons.filterKeys { it in idFor }.mapKeys { idFor.getValue(it.key) }
             val used = tunnels.filter { t -> apps.any { it.tunnelId == t.id } }
             val guestPlan = Share.Plan(used, apps, icons, apps.map { it.name }, emptyList(), emptyList(),
