@@ -100,4 +100,15 @@
     <string name="web_cert_err_date">expired or not yet valid</string>
     <string name="web_cert_err_untrusted">unknown issuer (self-signed)</string>
     <string name="web_cert_err_other">invalid</string>
+    <string name="guest_err_blocked">The owner has blocked this access.</string>
+    <string name="guest_err_expired">This access has expired.</string>
+    <string name="guest_err_unknown">This access no longer exists.</string>
+    <string name="guest_err_other_device">This invitation has already been used. Please ask for a new one.</string>
+    <string name="guest_err_device">This access belongs to another phone.</string>
+    <string name="guest_err_busy">Too many requests – please try again later.</string>
+    <string name="guest_err_network">Key server not reachable. Check the internet connection.</string>
+    <string name="guest_err_server">Key server error. Please try again later.</string>
+    <string name="guest_err_imported">This invitation is already in HomeHyrax.</string>
+    <string name="guest_err_format">That\'s not a valid invitation.</string>
+    <string name="guest_err_no_reply">No reply from the home network.</string>
 </resources>

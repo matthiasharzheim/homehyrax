@@ -105,6 +105,34 @@ object Net {
     /** Tunnel bleibt nach dem Verlassen der App noch so lange stehen. */
     private const val LINGER_MS = 90_000L
 
+    /** Laufender Gast-Tunnel: so oft beim Schluesseldienst nachfragen, ob der Zugang noch gilt */
+    private const val GUEST_CHECK_MS = 60_000L
+    private val guestWatch = mutableMapOf<String, Job>()
+
+    /**
+     * Sperren soll auch bei offener Kachel wirken: solange der Gast-Tunnel laeuft, jede Minute pruefen und
+     * ihn beenden, sobald der Schluesseldienst den Zugang verweigert (kurze Netzprobleme beenden ihn nicht).
+     */
+    @Synchronized
+    private fun watchGuest(t: Tunnel) {
+        if (guestWatch[t.id]?.isActive == true) return
+        guestWatch[t.id] = scope.launch {
+            try {
+                while (true) {
+                    delay(GUEST_CHECK_MS)
+                    if (!Wgbridge.isRunning(t.id)) break
+                    val e = runCatching { Guest.unlock(app, t) }.exceptionOrNull() as? Guest.Failure ?: continue
+                    if (e.code in setOf("blocked", "expired", "unknown", "not_bound", "bad_signature", "device")) {
+                        runCatching { Wgbridge.stopTunnel(t.id) }
+                        break
+                    }
+                }
+            } finally {
+                synchronized(this@Net) { guestWatch.remove(t.id) }
+            }
+        }
+    }
+
     private lateinit var app: Context
 
     fun init(ctx: Context) {
@@ -325,12 +353,24 @@ object Net {
      */
     suspend fun connect(t: Tunnel): String? = withContext(Dispatchers.IO) {
         if (t.isTailscale) return@withContext connectTailscale(t)
-        try {
-            Wgbridge.startTunnel(t.id, t.config)
+        // Gastzugang: Schluessel bei jedem Verbinden beim Schluesseldienst holen; gibt es keinen (gesperrt,
+        // abgelaufen, Server nicht erreichbar), einen noch laufenden Tunnel sofort beenden
+        val wg = if (!t.isGuest) t else try {
+            Guest.unlock(app, t)
         } catch (e: Exception) {
-            return@withContext friendly(e.message)
+            runCatching { Wgbridge.stopTunnel(t.id) }
+            return@withContext Guest.message(app, e)
         }
+        try {
+            Wgbridge.startTunnel(wg.id, wg.config)
+        } catch (e: Exception) {
+            // Gast: Go-Meldungen koennen Router-Adresse/Konfiguration enthalten
+            return@withContext if (t.isGuest) app.getString(R.string.guest_err_no_reply) else friendly(e.message)
+        }
+        if (t.isGuest) watchGuest(t)
         if (Wgbridge.waitHandshake(t.id, 7000)) null
+        // Gast: Adresse des Routers nicht anzeigen
+        else if (t.isGuest) app.getString(R.string.guest_err_no_reply)
         else app.getString(R.string.net_no_reply_home, t.endpoint) + "\n" +
             goMsg(Wgbridge.lastError(t.id)).ifEmpty { app.getString(R.string.net_router_unreachable) }
     }

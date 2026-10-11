@@ -97,12 +97,13 @@ object Share {
      * Farbe/Symbol/Bild und Anzeige-Optionen; Verbindung, Art, Aktion samt Zugangsdaten, VPN-Stufe
      * und bestaetigte Zertifikate bleiben unveraendert, die Sperre wird nie abgeschwaecht.
      */
-    fun plan(ctx: Context, text: String): Plan {
+    fun plan(ctx: Context, text: String, ignoreGuest: Boolean = false): Plan {
         val raw = Base64.decode(text.trim().removePrefix(PREFIX), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
         val o = JSONObject(String(inflate(raw)))
         val store = ctx.store
-        val haveTunnels = store.tunnels()
-        val haveApps = store.apps()
+        // Gastzugaenge gehoeren zu den Gast-Eintraegen: nie einem importierten Eintrag zuordnen
+        val haveTunnels = store.tunnels().filter { !it.isGuest }
+        val haveApps = store.apps().filter { !ignoreGuest || !it.isGuest }
 
         val idMap = mutableMapOf<String, String>()
         val newTunnels = ArrayList<Tunnel>()

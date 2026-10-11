@@ -100,4 +100,15 @@
     <string name="web_cert_err_date">abgelaufen oder noch nicht gültig</string>
     <string name="web_cert_err_untrusted">unbekannter Aussteller (selbst signiert)</string>
     <string name="web_cert_err_other">ungültig</string>
+    <string name="guest_err_blocked">Der Besitzer hat den Zugang gesperrt.</string>
+    <string name="guest_err_expired">Der Zugang ist abgelaufen.</string>
+    <string name="guest_err_unknown">Den Zugang gibt es nicht mehr.</string>
+    <string name="guest_err_other_device">Diese Einladung wurde schon benutzt. Bitte eine neue anfordern.</string>
+    <string name="guest_err_device">Der Zugang gehört zu einem anderen Handy.</string>
+    <string name="guest_err_busy">Zu viele Anfragen – bitte später erneut versuchen.</string>
+    <string name="guest_err_network">Schlüsseldienst nicht erreichbar. Internetverbindung prüfen.</string>
+    <string name="guest_err_server">Fehler beim Schlüsseldienst. Bitte später erneut versuchen.</string>
+    <string name="guest_err_imported">Diese Einladung ist schon übernommen.</string>
+    <string name="guest_err_format">Das ist keine gültige Einladung.</string>
+    <string name="guest_err_no_reply">Keine Antwort vom Heimnetz.</string>
 </resources>

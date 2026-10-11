@@ -308,8 +308,8 @@ class WebAppActivity : FragmentActivity() {
         val t = tunnel ?: return
         if ((viaTunnel || wantTunnel) && !holdingTunnel) {
             holdTunnel(t)
-            // Tunnel wurde im Hintergrund abgebaut -> leise neu aufbauen
-            if (viaTunnel && !Net.isRunning(t.id)) lifecycleScope.launch {
+            // Tunnel wurde im Hintergrund abgebaut -> leise neu aufbauen; Gast: jedes Mal beim Schluesseldienst fragen
+            if (viaTunnel && (t.isGuest || !Net.isRunning(t.id))) lifecycleScope.launch {
                 Net.connect(t)?.let { fail(it) } ?: web.reload()
             }
         }
@@ -620,10 +620,13 @@ class WebAppActivity : FragmentActivity() {
         Text(text, color = Color(0xFFE0E6EA), textAlign = TextAlign.Center)
         Spacer(Modifier.height(24.dp))
         Button(onClick = { retry() }) { Text(stringResource(R.string.web_retry)) }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = {
-            startActivity(Intent(this@WebAppActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_EDIT, app.id))
-        }) { Text(stringResource(R.string.web_settings), color = Color.White) }
+        // Gast-Eintraege lassen sich nicht bearbeiten
+        if (!app.isGuest) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                startActivity(Intent(this@WebAppActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_EDIT, app.id))
+            }) { Text(stringResource(R.string.web_settings), color = Color.White) }
+        }
     }
 
     companion object { private const val RELOCK_MS = 60_000L }

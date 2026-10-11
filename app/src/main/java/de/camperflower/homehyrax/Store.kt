@@ -45,7 +45,10 @@ data class WebApp(
     val fullscreen: Boolean = true,
     /** "Immer VPN": auch zuhause ueber den Tunnel, nie direkt (nur mit tunnelId). Aus = "Smart VPN". */
     val alwaysTunnel: Boolean = false,
+    /** Gastzugang: id der Einladung, von der dieser Eintrag stammt (nicht bearbeitbar, nicht weiterteilbar) */
+    val guest: String? = null,
 ) {
+    val isGuest: Boolean get() = guest != null
     val isAction: Boolean get() = kind == KIND_ACTION
     val isCamera: Boolean get() = kind == KIND_CAMERA
     val host: String get() = Uri.parse(url).host.orEmpty()
@@ -111,6 +114,8 @@ data class ShellyAction(
 /**
  * Eine Verbindung fuer unterwegs (Inhalt im Klartext nur im RAM).
  * type "wg": config = wg-quick-Text. type "ts": config = JSON {"control","authkey"} (Tailscale/Headscale).
+ * type "gs": Gastzugang, config = JSON {"inv","ct"} - WireGuard-Text verschluesselt mit dem Schluessel vom
+ * Schluesseldienst, der nur bei jeder Verbindung geholt wird (Guest.unlock)
  */
 data class Tunnel(
     val id: String = UUID.randomUUID().toString(),
@@ -119,13 +124,14 @@ data class Tunnel(
     val type: String = TUNNEL_WG,
 ) {
     val isTailscale: Boolean get() = type == TUNNEL_TS
+    val isGuest: Boolean get() = type == TUNNEL_GUEST
 
     /** Ohne Konfiguration (enthaelt den privaten Schluessel bzw. Auth-Key). */
     override fun toString() = "Tunnel(id=$id, name=$name, type=$type)"
 
     /** "xyz.myfritz.net:51820" bzw. "Tailscale" / Headscale-Host fuer die Anzeige */
     val endpoint: String
-        get() = if (isTailscale) {
+        get() = if (isGuest) "" else if (isTailscale) {
             runCatching { JSONObject(config).optString("control") }.getOrNull()?.takeIf { it.isNotBlank() }
                 ?.let { "Tailscale · " + (Uri.parse(it).host ?: it) } ?: "Tailscale"
         } else config.lineSequence().map { it.trim() }
@@ -135,6 +141,7 @@ data class Tunnel(
 
 const val TUNNEL_WG = "wg"
 const val TUNNEL_TS = "ts"
+const val TUNNEL_GUEST = "gs"
 
 /**
  * Ablage im privaten App-Speicher. WireGuard-Konfigurationen sind mit einem
@@ -198,6 +205,7 @@ class Store(private val ctx: Context) {
             trustedCert = o.optString("cert").ifEmpty { null },
             symbol = o.optString("sym").ifEmpty { null },
             kind = o.optString("kind", KIND_WEB),
+            guest = o.optString("guest").ifEmpty { null },
             action = ShellyAction.fromJson(o.optJSONObject("act")) { p ->
                 if (p.isEmpty()) "" else runCatching { decrypt(p) }.getOrElse { locked[id] = p; "" }
             },
@@ -268,6 +276,7 @@ class Store(private val ctx: Context) {
                 put("desk", it.desktop); put("full", it.fullscreen); put("always", it.alwaysTunnel)
                 put("sym", it.symbol ?: "")
                 put("kind", it.kind)
+                it.guest?.let { g -> put("guest", g) }
                 if (it.isAction) put("auth", it.requireAuth) else put("wlock", it.requireAuth)
                 it.action?.let { a ->
                     // leeres Passwort + alter, nicht entschluesselbarer Wert -> alten Wert behalten
@@ -333,7 +342,15 @@ class Store(private val ctx: Context) {
 
     fun deleteTunnel(id: String) {
         val l = loadTunnels()
+        val guest = l.items.firstOrNull { it.id == id }?.takeIf { it.isGuest }
         writeTunnels(l.items.filter { it.id != id }, l.broken.filter { it.optString("id") != id })
+        if (guest != null) {
+            // Gast-Eintraege ohne ihren Gastzugang waeren ungeschuetzte Direkt-Kacheln -> mit loeschen
+            apps().filter { it.tunnelId == id }.forEach { deleteApp(it.id) }
+            Guest.forgetDevice(guest)
+            Thread { runCatching { Wgbridge.stopTunnel(id) } }.start()
+            return
+        }
         apps().filter { it.tunnelId == id }.forEach { saveApp(it.copy(tunnelId = null)) }
         // Go stoppt den Tunnel (wartet einen laufenden Tailscale-Start ab) und loescht erst dann den
         // Ordner, sonst schriebe der Knoten weiter hinein. Kann kurz blockieren -> nicht im Main-Thread
@@ -341,6 +358,41 @@ class Store(private val ctx: Context) {
         Thread {
             runCatching { Wgbridge.removeTailscale(id, dir.path) }.onFailure { dir.deleteRecursively() }
         }.start()
+    }
+
+    // ---- Gastzugaenge, die ich verschickt habe (Besitzer-Seite) ----
+    private val invitesFile = File(ctx.filesDir, "invites.json")
+    private val ownerFile = File(ctx.filesDir, "owner.key")
+
+    /** Eigene Einladungen: Name des Gastes und Eintraege kennt nur diese App, der Schluesseldienst nicht. */
+    fun invites(): List<Invite> = load(invitesFile) { o ->
+        Invite(o.getString("id"), o.getString("label"), o.optString("apps"), o.getLong("created"),
+            if (o.isNull("exp")) null else o.getLong("exp"), o.optBoolean("full"))
+    }.items
+
+    fun saveInvite(i: Invite) = atomicWrite(invitesFile, JSONArray().apply {
+        (invites().filter { it.id != i.id } + i).forEach { put(inviteJson(it)) }
+    }.toString())
+
+    fun deleteInvite(id: String) = atomicWrite(invitesFile, JSONArray().apply {
+        invites().filter { it.id != id }.forEach { put(inviteJson(it)) }
+    }.toString())
+
+    private fun inviteJson(i: Invite) = JSONObject().put("id", i.id).put("label", i.label).put("apps", i.apps)
+        .put("created", i.created).put("exp", i.expires ?: JSONObject.NULL).put("full", i.full)
+
+    /**
+     * Besitzer-Kennung beim Schluesseldienst: 32 Zufallsbytes, mit dem Keystore verschluesselt.
+     * Wer sie hat, kann die eigenen Einladungen sperren - geht sie verloren (App neu installiert),
+     * laufen die Einladungen weiter, bis sie ablaufen.
+     */
+    @Synchronized
+    fun ownerToken(): ByteArray {
+        // nicht mehr entschluesselbar (Keystore-Schluessel weg): neu anlegen, sonst ginge nie wieder Teilen
+        if (ownerFile.exists()) runCatching { return Base64.decode(decrypt(ownerFile.readText()), Base64.NO_WRAP) }
+        val raw = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        atomicWrite(ownerFile, encrypt(Base64.encodeToString(raw, Base64.NO_WRAP)))
+        return raw
     }
 
     /** Erst in .tmp schreiben, alten Stand als .bak behalten, dann ersetzen. */
@@ -401,6 +453,9 @@ class Store(private val ctx: Context) {
         private const val KEY_ALIAS = "homehyrax-configs"
     }
 }
+
+/** Eine verschickte Einladung (Besitzer-Seite); apps = Namen der Eintraege fuer die Anzeige; full = Vollzugriff */
+data class Invite(val id: String, val label: String, val apps: String, val created: Long, val expires: Long?, val full: Boolean = false)
 
 /**
  * Adress-Pruefungen ohne DNS-Anfrage: nur echte IP-Literale werden als IP gewertet

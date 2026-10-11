@@ -398,10 +398,13 @@ class CameraActivity : FragmentActivity() {
         Text(text, color = Color(0xFFE0E6EA), textAlign = TextAlign.Center)
         Spacer(Modifier.height(24.dp))
         Button(onClick = { start() }) { Text(stringResource(R.string.web_retry)) }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = {
-            startActivity(Intent(this@CameraActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_EDIT, app.id))
-        }) { Text(stringResource(R.string.web_settings), color = Color.White) }
+        // Gast-Eintraege lassen sich nicht bearbeiten
+        if (!app.isGuest) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                startActivity(Intent(this@CameraActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_EDIT, app.id))
+            }) { Text(stringResource(R.string.web_settings), color = Color.White) }
+        }
     }
 
     companion object { private const val RELOCK_MS = 60_000L }

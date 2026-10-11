@@ -131,6 +131,7 @@ import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -147,6 +148,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -233,6 +235,10 @@ class MainActivity : FragmentActivity() {
         var importPlan by mutableStateOf<Share.Plan?>(null)
         /** gerade geteilte Export-Datei (wird nach dem Teilen geloescht) */
         var shareFile: File? = null
+        /** Gast-Einladung geprueft, wartet auf Bestaetigung */
+        var guestAccepted by mutableStateOf<Guest.Accepted?>(null)
+        /** Ergebnis der Teilen-Seite: Ueberschrift, Text fuer den QR-Code, Text fuer die Datei */
+        var shareResult by mutableStateOf<Triple<String, String, String>?>(null)
     }
 
     private val ui by lazy { ViewModelProvider(this)[Ui::class.java] }
@@ -272,7 +278,29 @@ class MainActivity : FragmentActivity() {
         // nur beim ersten Start; nach Drehen o. ae. bleibt die aktuelle Seite.
         // Erst nach dem Anzeigen: eine gesperrte Kachel fragt vorher nach dem Entsperren
         if (savedInstanceState == null) intent.getStringExtra(EXTRA_EDIT)?.let { id -> window.decorView.post { editGuarded(id) } }
+        if (savedInstanceState == null) openSharedFile(intent)
         setContent { AppTheme { Root() } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // singleTask: laeuft die App schon, kommen Startbildschirm-Symbol (bearbeiten) und Datei hier an
+        intent.getStringExtra(EXTRA_EDIT)?.let { editGuarded(it) }
+        openSharedFile(intent)
+    }
+
+    /** Datei aus einem Messenger o. ae. geoeffnet: wie "HomeHyrax uebernehmen -> Datei oeffnen". */
+    private fun openSharedFile(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        intent.data = null   // nach Drehen nicht erneut importieren
+        lifecycleScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { contentResolver.openInputStream(uri)?.use { it.readAtMost(8_000_000).decodeToString() } }.getOrNull()
+            }
+            if (text != null && isImport(text)) importPayload(text.trim()) else toast(getString(R.string.main_not_ht_file))
+        }
     }
 
     override fun onResume() {
@@ -384,6 +412,7 @@ class MainActivity : FragmentActivity() {
             )
         }
         ui.importPlan?.let { ImportConfirm(it) }
+        ui.guestAccepted?.let { GuestConfirm(it) }
         when (val p = page) {
             Page.Home, Page.Tunnels -> MainTabs()
             is Page.EditApp -> EditPage(p)
@@ -425,7 +454,7 @@ class MainActivity : FragmentActivity() {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.main_more)) }
                         DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.main_share_title)) }, leadingIcon = { Icon(Icons.Filled.Share, null) },
-                                enabled = apps.isNotEmpty() || tunnels.isNotEmpty(),
+                                enabled = apps.any { !it.isGuest },
                                 onClick = { more = false; guard { page = Page.Share } })
                             DropdownMenuItem(text = { Text(stringResource(R.string.main_import_title)) }, leadingIcon = { Icon(Icons.Filled.QrCodeScanner, null) },
                                 onClick = { more = false; page = Page.Import })
@@ -605,7 +634,8 @@ class MainActivity : FragmentActivity() {
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(app.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(stringResource(when { app.isAction -> R.string.main_kind_action; app.isCamera -> R.string.main_kind_camera; else -> R.string.main_kind_web }), style = MaterialTheme.typography.labelMedium,
+                    val kindText = stringResource(when { app.isAction -> R.string.main_kind_action; app.isCamera -> R.string.main_kind_camera; else -> R.string.main_kind_web })
+                    Text(if (app.isGuest) kindText + " · " + stringResource(R.string.guest_tile) else kindText, style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold, color = accent)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (app.tunnelId != null) {
@@ -622,7 +652,7 @@ class MainActivity : FragmentActivity() {
                         Icon(Icons.Filled.MoreVert, stringResource(R.string.main_menu), tint = if (app.isCamera) Color.White else LocalContentColor.current)
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.main_edit)) }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                        if (!app.isGuest) DropdownMenuItem(text = { Text(stringResource(R.string.main_edit)) }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
                             onClick = { menu = false; if (app.requireAuth) guard { startEdit(app.id) } else startEdit(app.id) })
                         if (Shortcuts.pinSupported(ctx)) DropdownMenuItem(
                             text = { Text(stringResource(R.string.main_pin_short)) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.AddToHomeScreen, null) },
@@ -745,6 +775,8 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun startEdit(id: String?) {
+        // Gast-Eintraege gehoeren dem Besitzer: nicht bearbeiten (Editor zeigte sonst Passwoerter)
+        if (id != null && store.app(id)?.isGuest == true) { toast(getString(R.string.guest_no_edit)); return }
         draft = null
         ui.editIcon.value = id?.let { store.icon(it) }
         ui.editIconChanged.value = false
@@ -1082,7 +1114,7 @@ class MainActivity : FragmentActivity() {
                 }
                 val pickVpn = { on: Boolean, alw: Boolean ->
                     remote = on; always = alw
-                    if (on && tunnelId == null) tunnelId = tunnels.firstOrNull()?.id
+                    if (on && tunnelId == null) tunnelId = tunnels.firstOrNull { !it.isGuest }?.id
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pick(!remote, stringResource(R.string.main_vpn_none), null) { pickVpn(false, false) }
@@ -1099,7 +1131,8 @@ class MainActivity : FragmentActivity() {
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
                 if (remote) {
-                    tunnels.forEach { t ->
+                    // Gastzugaenge gehoeren zu den Gast-Eintraegen, nicht fuer eigene Kacheln
+                    tunnels.filter { !it.isGuest }.forEach { t ->
                         Choice(tunnelId == t.id, t.name, t.endpoint) { tunnelId = t.id }
                     }
                     TextButton(onClick = {
@@ -1393,7 +1426,8 @@ class MainActivity : FragmentActivity() {
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(t.name, fontWeight = FontWeight.SemiBold)
-                                    Text(t.endpoint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(if (t.isGuest) stringResource(R.string.guest_tunnel_sub) else t.endpoint,
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     if (t.isTailscale) tsStates[t.id]?.let { st ->
                                         Text(
                                             when (st.state) {
@@ -1414,7 +1448,7 @@ class MainActivity : FragmentActivity() {
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 // Tunnel-Seite zeigt Schluessel/Auth-Key: erst entsperren
-                                IconButton(onClick = { guard { page = Page.AddTunnel(null, t.id) } }) { Icon(Icons.Filled.Edit, stringResource(R.string.main_edit)) }
+                                if (!t.isGuest) IconButton(onClick = { guard { page = Page.AddTunnel(null, t.id) } }) { Icon(Icons.Filled.Edit, stringResource(R.string.main_edit)) }
                                 IconButton(onClick = { confirmDelete = t }) { Icon(Icons.Filled.Delete, stringResource(R.string.main_delete)) }
                             }
                             Spacer(Modifier.height(8.dp))
@@ -1463,7 +1497,7 @@ class MainActivity : FragmentActivity() {
             AlertDialog(
                 onDismissRequest = { confirmDelete = null },
                 title = { Text(stringResource(R.string.main_delete_title, t.name)) },
-                text = { Text(stringResource(R.string.main_delete_tunnel_text)) },
+                text = { Text(stringResource(if (t.isGuest) R.string.guest_delete_tunnel_text else R.string.main_delete_tunnel_text)) },
                 confirmButton = { TextButton(onClick = { safeStore { store.deleteTunnel(t.id) }; confirmDelete = null; reload() }) { Text(stringResource(R.string.main_delete)) } },
                 dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.main_cancel)) } },
             )
@@ -1495,7 +1529,7 @@ class MainActivity : FragmentActivity() {
         fun accept(text: String?) {
             val t = text?.trim().orEmpty()
             if (t.isEmpty()) return
-            if (Share.isPayload(t)) { importPayload(t); return }
+            if (isImport(t)) { importPayload(t); return }
             config = t
             error = Wgbridge.validateConfig(t).ifEmpty { null }?.let { getString(R.string.main_wg_invalid, it) }
         }
@@ -1852,10 +1886,154 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    // ========================================================== Gastzugang
+
+    /** Einladung oeffnen (bindet sie an dieses Handy), dann Vorschau zur Bestaetigung. */
+    private fun acceptGuest(text: String) {
+        toast(getString(R.string.guest_checking))
+        lifecycleScope.launch {
+            runCatching { withContext(Dispatchers.IO) { Guest.accept(this@MainActivity, text) } }
+                .onSuccess {
+                    when {
+                        it.plan.isEmpty -> toast(getString(R.string.main_import_nothing))
+                        it.full -> ui.importPlan = it.plan
+                        else -> ui.guestAccepted = it
+                    }
+                }
+                .onFailure { toast(Guest.message(this@MainActivity, it)) }
+        }
+    }
+
+    /**
+     * Gastzugang speichern (ersetzte Gast-Eintraege werden dabei mit gleicher id ueberschrieben), danach
+     * Gastzugaenge ohne Eintraege entfernen. Alles nacheinander (parallele Schreibvorgaenge koennten sich ueberschreiben).
+     */
+    private fun applyGuest(a: Guest.Accepted) {
+        lifecycleScope.launch {
+            val r = withContext(NonCancellable + Dispatchers.IO) {
+                runCatching {
+                    val st = store
+                    Share.apply(this@MainActivity, a.plan).also {
+                        // alte Gastzugaenge ohne Eintraege aufraeumen (loescht auch den Geraeteschluessel)
+                        val used = st.apps().mapNotNull { it.tunnelId }.toSet()
+                        st.tunnels().filter { it.isGuest && it.id !in used }.forEach { t -> st.deleteTunnel(t.id) }
+                    }
+                }
+            }.getOrElse { toast(getString(R.string.main_err_save)); return@launch }
+            reload()
+            toast(resources.getQuantityString(R.plurals.main_import_done_n, r.apps, r.apps,
+                resources.getQuantityString(R.plurals.main_import_tunnels_n, r.tunnels, r.tunnels)))
+            page = Page.Home
+        }
+    }
+
+    @Composable
+    private fun GuestConfirm(a: Guest.Accepted) {
+        AlertDialog(
+            onDismissRequest = { ui.guestAccepted = null },
+            title = { Text(stringResource(R.string.guest_accept_title)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(a.plan.newApps.joinToString(), fontWeight = FontWeight.SemiBold)
+                    Text(listOfNotNull(stringResource(R.string.guest_device, a.device),
+                        a.expires?.let { stringResource(R.string.guest_until, DateUtils.formatDateTime(this@MainActivity, it * 1000,
+                            DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME)) }).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (a.plan.skipped.isNotEmpty()) Text(stringResource(R.string.share_skipped, a.plan.skipped.joinToString()),
+                        color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.guest_accept_note), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { ui.guestAccepted = null; applyGuest(a) }) { Text(stringResource(R.string.main_import_preview_ok)) } },
+            dismissButton = { TextButton(onClick = { ui.guestAccepted = null }) { Text(stringResource(R.string.main_cancel)) } },
+        )
+    }
+
+    /** "Geteilt mit": verschickte Gast-Einladungen mit Zustand vom Schluesseldienst, sperren/freigeben, loeschen. */
+    @Composable
+    private fun GuestList(version: Int) {
+        val ctx = LocalContext.current
+        val scope = rememberCoroutineScope()
+        var invites by remember { mutableStateOf(emptyList<Invite>()) }
+        var states by remember { mutableStateOf<Map<String, Guest.State>?>(null) }
+        var error by remember { mutableStateOf<String?>(null) }
+        var busy by remember { mutableStateOf(setOf<String>()) }
+        var confirmDelete by remember { mutableStateOf<Invite?>(null) }
+        var seq by remember { mutableIntStateOf(0) }
+        LaunchedEffect(version, seq) {
+            invites = withContext(Dispatchers.IO) { runCatching { store.invites() }.getOrDefault(emptyList()) }
+            if (invites.isEmpty()) return@LaunchedEffect
+            runCatching { withContext(Dispatchers.IO) { Guest.states(ctx) } }
+                .onSuccess { states = it; error = null }.onFailure { error = Guest.message(ctx, it) }
+        }
+        if (invites.isEmpty()) return
+        Spacer(Modifier.height(28.dp))
+        Text(stringResource(R.string.guest_shared_with), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        invites.sortedByDescending { it.created }.forEach { inv ->
+            val st = states?.get(inv.id)
+            val gone = states != null && st == null && error == null
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Person, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(inv.label, fontWeight = FontWeight.SemiBold)
+                    Text(if (inv.full) stringResource(R.string.guest_share_full) + " · " + inv.apps else inv.apps,
+                        style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val line = when {
+                        gone -> stringResource(R.string.guest_status_gone)
+                        st == null -> ""
+                        inv.full -> stringResource(if (st.bound) R.string.share_full_taken else R.string.guest_not_opened)
+                        else -> listOfNotNull(
+                            stringResource(when (st.status) { "blocked" -> R.string.guest_status_blocked; "expired" -> R.string.guest_status_expired; else -> R.string.guest_status_active }),
+                            if (!st.bound) stringResource(R.string.guest_not_opened) else null,
+                            st.lastUsed?.let { stringResource(R.string.guest_last_used, DateUtils.getRelativeTimeSpanString(it * 1000).toString()) },
+                            st.expires?.let { stringResource(R.string.guest_until, DateUtils.formatDateTime(ctx, it * 1000, DateUtils.FORMAT_SHOW_DATE)) },
+                        ).joinToString(" · ")
+                    }
+                    if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall,
+                        color = if (st?.status == "active") Color(0xFF2E7D32) else MaterialTheme.colorScheme.error)
+                }
+                // Schalter = Zugang an/aus; abgelaufene lassen sich nicht wieder einschalten
+                if (st != null && st.status != "expired" && !inv.full) Switch(
+                    checked = st.status == "active", enabled = inv.id !in busy,
+                    onCheckedChange = { on ->
+                        busy = busy + inv.id
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { Guest.setBlocked(ctx, inv.id, !on) } }
+                                .onFailure { toast(Guest.message(ctx, it)) }
+                            busy = busy - inv.id
+                            seq++
+                        }
+                    })
+                IconButton(onClick = { confirmDelete = inv }) { Icon(Icons.Filled.Delete, stringResource(R.string.main_delete)) }
+            }
+            HorizontalDivider()
+        }
+        confirmDelete?.let { inv ->
+            AlertDialog(
+                onDismissRequest = { confirmDelete = null },
+                title = { Text(stringResource(R.string.main_delete_title, inv.label)) },
+                text = { Text(stringResource(if (inv.full) R.string.share_full_delete_text else R.string.guest_delete_text)) },
+                confirmButton = { TextButton(onClick = {
+                    confirmDelete = null
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) { Guest.delete(ctx, inv.id) } }.onFailure { toast(Guest.message(ctx, it)) }
+                        seq++
+                    }
+                }) { Text(stringResource(R.string.main_delete)) } },
+                dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.main_cancel)) } },
+            )
+        }
+    }
+
     // ============================================================= Teilen
+
+    private fun isImport(text: String?) = Share.isPayload(text) || Guest.isInvite(text)
 
     /** Export lesen und pruefen (im Hintergrund), dann erst nach Bestaetigung uebernehmen. */
     private fun importPayload(text: String) {
+        if (Guest.isInvite(text)) { acceptGuest(text); return }
         lifecycleScope.launch {
             val plan = withContext(Dispatchers.IO) { runCatching { Share.plan(this@MainActivity, text) }.getOrNull() }
             when {
@@ -1909,91 +2087,145 @@ class MainActivity : FragmentActivity() {
         )
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
     @Composable
     private fun SharePage() {
         val ctx = LocalContext.current
-        // Schluessel im QR-Code: keine Screenshots/Bildschirmaufnahmen
+        val scope = rememberCoroutineScope()
+        // QR-Code kann Schluessel enthalten: keine Screenshots/Bildschirmaufnahmen
         DisposableEffect(Unit) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
         }
-        // Keine Verbindung vorausgewaehlt (Schluessel nur auf ausdruecklichen Wunsch); QR erst nach Tipp
-        var include by remember { mutableStateOf(emptySet<String>()) }
-        var showQr by remember { mutableStateOf(false) }
-        val chosen = tunnels.filter { it.id in include }
-        val scope = rememberCoroutineScope()
-        // QR im Hintergrund bauen: first = zu gross fuer einen QR-Code
-        val qrState by produceState<Pair<Boolean, Bitmap?>?>(null, include, apps, tunnels, showQr) {
-            value = null
-            if (!showQr) return@produceState
-            value = withContext(Dispatchers.Default) {
-                val payload = Share.export(ctx, apps, chosen, withIcons = false)
-                if (payload.length > 2300) true to null else false to Share.qr(payload, 720)
-            }
-        }
+        // Gast-Eintraege gehoeren einem anderen Besitzer: nie weitergeben
+        val own = apps.filter { !it.isGuest }
+        val ownTunnels = tunnels.filter { !it.isGuest }
+        // Als Gast geht nur, was ueber WireGuard laeuft (der Schluesseldienst gibt die Verbindung frei)
+        fun guestOk(a: WebApp) = ownTunnels.any { it.id == a.tunnelId && it.type == TUNNEL_WG }
+        var chosen by rememberSaveable { mutableStateOf(own.map { it.id }) }
+        var asGuest by rememberSaveable { mutableStateOf(true) }
+        var label by rememberSaveable { mutableStateOf("") }
+        var days by rememberSaveable { mutableIntStateOf(0) }
+        var busy by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        var listVersion by remember { mutableIntStateOf(0) }
+        val pick = own.filter { it.id in chosen && (!asGuest || guestOk(it)) }
         // Export-Datei gleich nach dem Teilen wieder loeschen (kurz verzoegert, falls die Ziel-App noch liest)
         val sendFile = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             ui.shareFile?.let { f -> Handler(Looper.getMainLooper()).postDelayed({ f.delete() }, 30_000) }
             ui.shareFile = null
         }
+        val result = ui.shareResult
+        // Seite verlassen (auch per Zurueck-Taste): altes Ergebnis nicht beim naechsten Mal wieder zeigen
+        DisposableEffect(Unit) { onDispose { if (!isChangingConfigurations) ui.shareResult = null } }
 
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(R.string.main_share_title)) },
-                    navigationIcon = { IconButton(onClick = { page = Page.Home }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) } },
+                    navigationIcon = { IconButton(onClick = { ui.shareResult = null; page = Page.Home }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) } },
                 )
             },
         ) { pad ->
             Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-                Text(stringResource(R.string.main_share_intro), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(16.dp))
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    val q = qrState
-                    when {
-                        !showQr -> FilledTonalButton(onClick = { showQr = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                            Icon(Icons.Filled.QrCodeScanner, null); Spacer(Modifier.width(10.dp)); Text(stringResource(R.string.main_share_show_qr))
-                        }
-                        q == null -> CircularProgressIndicator()
-                        q.second != null -> Image(q.second!!.asImageBitmap(), stringResource(R.string.main_qr_code),
-                            Modifier.size(280.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(8.dp))
-                        else -> Text(stringResource(R.string.main_share_too_big), color = MaterialTheme.colorScheme.error)
+                if (result != null) {
+                    val (title, qrText, fileText) = result
+                    val tooBig = qrText.length > 2300
+                    val qr by produceState<Bitmap?>(null, qrText) {
+                        value = if (tooBig) null else withContext(Dispatchers.Default) { Share.qr(qrText, 720) }
                     }
-                }
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        val (intent, file) = withContext(Dispatchers.IO) {
-                            Share.shareFile(ctx, Share.export(ctx, apps, chosen, withIcons = true))
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(16.dp))
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        val q = qr
+                        when {
+                            tooBig -> Text(stringResource(R.string.share_qr_too_big), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            q == null -> CircularProgressIndicator()
+                            else -> Image(q.asImageBitmap(), stringResource(R.string.main_qr_code),
+                                Modifier.size(280.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(8.dp))
                         }
-                        ui.shareFile = file
-                        if (runCatching { sendFile.launch(intent) }.isFailure) { file.delete(); ui.shareFile = null }
-                    }
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Share, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.main_share_file))
-                }
-                Spacer(Modifier.height(20.dp))
-
-                Text(stringResource(R.string.main_share_included), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(if (apps.isEmpty()) stringResource(R.string.main_share_no_apps) else apps.joinToString { it.name },
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                tunnels.forEach { t ->
-                    SwitchRow(stringResource(R.string.main_share_include_tunnel, t.name), stringResource(if (t.isTailscale) R.string.main_share_ts_sub else R.string.main_share_wg_sub),
-                        t.id in include) { on -> include = if (on) include + t.id else include - t.id }
-                }
-                Spacer(Modifier.height(8.dp))
-                if (chosen.isNotEmpty() || apps.any { it.action?.pass?.isNotEmpty() == true }) {
-                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp)) {
-                        Text(stringResource(R.string.main_share_warning),
-                            Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
                     }
                     Spacer(Modifier.height(12.dp))
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            val (intent, file) = withContext(Dispatchers.IO) { Share.shareFile(ctx, fileText) }
+                            ui.shareFile = file
+                            if (runCatching { sendFile.launch(intent) }.isFailure) { file.delete(); ui.shareFile = null }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Share, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.main_share_file))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.share_result_note), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { ui.shareResult = null; listVersion++ }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.guest_done))
+                    }
+                } else {
+                    // 1. Was?
+                    Text(stringResource(R.string.share_what), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (own.isEmpty()) Text(stringResource(R.string.main_share_no_apps), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    own.forEach { a ->
+                        val ok = !asGuest || guestOk(a)
+                        Row(Modifier.fillMaxWidth().clickable(enabled = ok) { chosen = if (a.id in chosen) chosen - a.id else chosen + a.id },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(ok && a.id in chosen, { on -> chosen = if (on) chosen + a.id else chosen - a.id }, enabled = ok)
+                            Column {
+                                Text(a.name, color = if (ok) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (!ok) Text(stringResource(R.string.share_full_only), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    // 2. Wie?
+                    Spacer(Modifier.height(16.dp))
+                    Text(stringResource(R.string.share_how), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Choice(asGuest, stringResource(R.string.guest_share_as_guest), stringResource(R.string.guest_share_as_guest_sub)) { asGuest = true }
+                    Choice(!asGuest, stringResource(R.string.guest_share_full), stringResource(R.string.guest_share_full_sub)) { asGuest = false }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(label, { label = it.take(40) }, label = { Text(stringResource(R.string.guest_name)) },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                    if (asGuest) {
+                        Text(stringResource(R.string.guest_valid), fontWeight = FontWeight.SemiBold)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0 to R.string.guest_valid_open, 1 to R.string.guest_valid_day, 7 to R.string.guest_valid_week, 30 to R.string.guest_valid_month)
+                                .forEach { (d, res) -> Pick(days == d, stringResource(res), null) { days = d } }
+                        }
+                    } else {
+                        Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp)) {
+                            Text(stringResource(R.string.share_full_note), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                    error?.let { Spacer(Modifier.height(12.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
+                    Spacer(Modifier.height(20.dp))
+                    // 3. Teilen
+                    Button(
+                        enabled = !busy && pick.isNotEmpty() && label.isNotBlank(),
+                        onClick = {
+                            busy = true; error = null
+                            val used = ownTunnels.filter { t -> pick.any { it.tunnelId == t.id } }
+                            val name = label.trim()
+                            val valid = if (days == 0) null else days * 86400L
+                            val guest = asGuest
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        Guest.create(ctx, name, pick, used, valid, full = !guest)
+                                            .let { (qrText, fileText) -> Triple(getString(R.string.guest_ready, name), qrText, fileText) }
+                                    }
+                                }.onSuccess { ui.shareResult = it }.onFailure { error = Guest.message(ctx, it) }
+                                busy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                    ) {
+                        if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.share_button)) }
+                    }
                 }
-                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp)) {
-                    Text(stringResource(R.string.main_share_tip),
-                        Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
-                }
+                GuestList(listVersion)
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -2005,7 +2237,7 @@ class MainActivity : FragmentActivity() {
         val ctx = LocalContext.current
         val scan = rememberLauncherForActivityResult(ScanContract()) { r ->
             val t = r.contents ?: return@rememberLauncherForActivityResult
-            if (Share.isPayload(t)) importPayload(t)
+            if (isImport(t)) importPayload(t)
             else toast(getString(R.string.main_not_ht_code))
         }
         val scope = rememberCoroutineScope()
@@ -2015,7 +2247,7 @@ class MainActivity : FragmentActivity() {
                 val text = withContext(Dispatchers.IO) {
                     runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readAtMost(8_000_000).decodeToString() } }.getOrNull()
                 }
-                if (text != null && Share.isPayload(text)) importPayload(text) else toast(getString(R.string.main_not_ht_file))
+                if (text != null && isImport(text)) importPayload(text) else toast(getString(R.string.main_not_ht_file))
             }
         }
         val pickQr = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -2024,7 +2256,7 @@ class MainActivity : FragmentActivity() {
                 val t = withContext(Dispatchers.Default) { Share.qrFromImage(ctx, uri) }
                 when {
                     t == null -> toast(getString(R.string.main_no_qr))
-                    Share.isPayload(t) -> importPayload(t)
+                    isImport(t) -> importPayload(t)
                     else -> toast(getString(R.string.main_not_ht_code))
                 }
             }
