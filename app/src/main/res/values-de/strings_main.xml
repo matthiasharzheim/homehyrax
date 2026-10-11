@@ -284,4 +284,5 @@
     <string name="about_privacy">Datenschutz</string>
     <string name="about_how">So funktioniert’s</string>
     <string name="about_company">Camperflower GmbH</string>
+    <string name="share_trust_hint">Nur mit jemandem teilen, dem du auch deinen Wohnungsschlüssel geben würdest.</string>
 </resources>

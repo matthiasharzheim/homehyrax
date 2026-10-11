@@ -2370,6 +2370,10 @@ class MainActivity : FragmentActivity() {
                     Text(stringResource(R.string.share_how), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Choice(asGuest, stringResource(R.string.guest_share_as_guest), stringResource(R.string.guest_share_as_guest_sub)) { asGuest = true }
                     Choice(!asGuest, stringResource(R.string.guest_share_full), stringResource(R.string.guest_share_full_sub)) { asGuest = false }
+                    // ehrlicher Hinweis: ein Gastzugang erschwert Missbrauch, ein technisch versierter Gast kann den
+                    // WireGuard-Schluessel auf seinem Handy trotzdem herausloesen
+                    Text(stringResource(R.string.share_trust_hint), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp, top = 4.dp))
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(label, { label = it.take(40) }, label = { Text(stringResource(R.string.guest_name)) },
                         singleLine = true, modifier = Modifier.fillMaxWidth())
