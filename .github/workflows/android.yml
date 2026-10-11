@@ -19,9 +19,9 @@ name: Android App
 on:
   push:
     branches: [main, "pruefung/**"]
-    paths-ignore: ["site/**", ".github/workflows/pages.yml", "docs/**", "intern/**", "**/*.md"]
+    paths-ignore: ["site/**", ".github/workflows/pages.yml", "docs/**", "intern/**", "keyserver/**", "**/*.md"]
   pull_request:
-    paths-ignore: ["site/**", ".github/workflows/pages.yml", "docs/**", "intern/**", "**/*.md"]
+    paths-ignore: ["site/**", ".github/workflows/pages.yml", "docs/**", "intern/**", "keyserver/**", "**/*.md"]
   workflow_dispatch:
 
 # Ein neuer Push auf denselben PR/Pruef-Branch bricht den laufenden Build ab; Laeufe auf main laufen zu Ende
