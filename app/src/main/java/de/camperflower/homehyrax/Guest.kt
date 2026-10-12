@@ -4,6 +4,9 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.google.android.gms.tasks.Tasks
+import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.StandardIntegrityManager
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -15,6 +18,7 @@ import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
+import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -73,6 +77,7 @@ object Guest {
         "denied" -> R.string.guest_err_format
         "rate_limit" -> R.string.guest_err_busy
         "network" -> R.string.guest_err_network
+        "integrity", "integrity_required" -> R.string.guest_err_integrity
         "service_off" -> R.string.guest_err_service_off
         "imported" -> R.string.guest_err_imported
         "format" -> R.string.guest_err_format
@@ -278,13 +283,19 @@ object Guest {
      * Anfrage an den Schluesseldienst. sign = Einladungs-id: mit Zeitstempel, Einmalwert und Signatur des
      * Geraeteschluessels; null = Besitzer-Anfrage (create bekommt nur Zeitstempel und Einmalwert).
      */
-    private fun call(ctx: Context, action: String, body: JSONObject, sign: String?, retry: Boolean = true): JSONObject {
+    private fun call(ctx: Context, action: String, body: JSONObject, sign: String?, retry: Boolean = true,
+                     integrity: Boolean = false): JSONObject {
         val ts = System.currentTimeMillis() / 1000 + clockOffset
         val nonce = b64u(ByteArray(16).also { SecureRandom().nextBytes(it) })
         val req = JSONObject(body.toString())
         if (sign != null || action == "create") req.put("ts", ts).put("nonce", nonce)
         if (req.has("expiresIn")) req.put("expires", ts + req.getLong("expiresIn")).remove("expiresIn")
         if (sign != null) req.put("id", sign).put("sig", b64u(signWith(sign, "HH1|$action|$sign|$ts|$nonce")))
+        if (integrity) {
+            // Nachweis gilt nur fuer genau diese Anfrage (requestHash ueber denselben Text wie beim Server)
+            val subject = sign ?: sha256Hex(unb64u(body.getString("owner")))
+            req.put("integrity", integrityToken(ctx, requestHash("$action|$subject|$ts|$nonce")))
+        }
         val (status, res) = try {
             post(server(ctx) + action, req.toString())
         } catch (e: IOException) {
@@ -299,8 +310,10 @@ object Guest {
         val code = o.optString("error", "server")
         if (code == "clock" && retry && o.has("now")) {
             clockOffset = o.getLong("now") - System.currentTimeMillis() / 1000
-            return call(ctx, action, body, sign, retry = false)
+            return call(ctx, action, body, sign, retry = false, integrity = integrity)
         }
+        // Schluesseldienst verlangt die Echtheitspruefung (nur bei create/bind/key, hoechstens einmal am Tag je Geraet)
+        if (code == "integrity_required" && !integrity) return call(ctx, action, body, sign, retry, integrity = true)
         throw Failure(code)
     }
 
@@ -367,6 +380,49 @@ object Guest {
         val h = u.host.lowercase()
         return u.protocol == "https" && u.path.endsWith("/") && (h in ALLOWED_HOSTS || ALLOWED_HOSTS.any { h.endsWith(".$it") })
     }
+
+    // ================================================================ Echtheitspruefung (Google Play Integrity)
+
+    private var integrityProvider: StandardIntegrityManager.StandardIntegrityTokenProvider? = null
+    private var integrityProject = 0L
+
+    /** Cloud-Projektnummer meldet der Schluesseldienst (health) - so laesst sie sich ohne App-Update setzen */
+    private fun cloudProject(ctx: Context): Long {
+        val text = try {
+            val c = URL(server(ctx) + "health").openConnection() as HttpURLConnection
+            c.connectTimeout = 5000; c.readTimeout = 5000; c.instanceFollowRedirects = false
+            try { c.inputStream.use { it.readAtMost(4096).decodeToString() } } finally { c.disconnect() }
+        } catch (e: IOException) {
+            throw Failure("network")   // nur das Netz weg - nicht "Geraet nicht zugelassen" melden
+        }
+        return runCatching { JSONObject(text).optString("project").toLongOrNull() }.getOrNull()?.takeIf { it > 0 }
+            ?: throw Failure("server")   // Schluesseldienst falsch eingestellt (keine Projektnummer)
+    }
+
+    /**
+     * Versiegelter Nachweis von Google: echte HomeHyrax aus dem Play Store auf einem echten Geraet, gebunden an hash.
+     * Der Anbieter wird einmal vorbereitet und wiederverwendet; schlaegt eine Anfrage fehl, einmal neu vorbereiten.
+     */
+    @Synchronized
+    private fun integrityToken(ctx: Context, hash: String): String {
+        val project = cloudProject(ctx)
+        fun prepare() = Tasks.await(IntegrityManagerFactory.createStandard(ctx.applicationContext).prepareIntegrityToken(
+            StandardIntegrityManager.PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(project).build()), 30, TimeUnit.SECONDS)
+            .also { integrityProvider = it; integrityProject = project }
+        fun request(p: StandardIntegrityManager.StandardIntegrityTokenProvider) = Tasks.await(p.request(
+            StandardIntegrityManager.StandardIntegrityTokenRequest.builder().setRequestHash(hash).build()), 30, TimeUnit.SECONDS).token()
+        return try {
+            val p = integrityProvider?.takeIf { integrityProject == project } ?: prepare()
+            runCatching { request(p) }.getOrElse { request(prepare()) }
+        } catch (e: Exception) {
+            throw Failure("integrity")   // keine Play-Dienste, nicht aus dem Play Store installiert o. ae.
+        }
+    }
+
+    /** requestHash wie beim Schluesseldienst: base64url(SHA-256("HH1|<nachricht>")) */
+    private fun requestHash(msg: String) = b64u(MessageDigest.getInstance("SHA-256").digest("HH1|$msg".toByteArray()))
+
+    private fun sha256Hex(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
 
     // ================================================================ Krypto
 

@@ -35,6 +35,8 @@ final class Service
     /** @var \Closure(): int */
     public \Closure $clock;
     private string $ip = '';
+    /** @var string[] Zaehler, die die aktuelle Anfrage erhoeht hat */
+    private array $hitKeys = [];
 
     /**
      * @param array $cfg siehe config.example.php
@@ -66,7 +68,10 @@ final class Service
         try {
             $path = '/' . trim($path, '/');
             if ($path === '/v1/health' && ($method === 'GET' || $method === 'HEAD')) {
-                return [200, ['ok' => true, 'api' => API, 'integrity' => $this->integrity !== null]];
+                $h = ['ok' => true, 'api' => API, 'integrity' => $this->integrity !== null];
+                // Cloud-Projektnummer fuer die Echtheitspruefung: die App holt sie hier (kein App-Update noetig)
+                if ($this->integrity !== null) $h['project'] = (string)($this->cfg['cloud_project'] ?? '');
+                return [200, $h];
             }
             $action = match ($path) {
                 '/v1/create' => 'create', '/v1/bind' => 'bind', '/v1/key' => 'key',
@@ -78,10 +83,13 @@ final class Service
             $in = json_decode($body, true, 8);
             if (!is_array($in) || array_is_list($in) && $in !== []) throw new Fail(400, 'bad_json');
             $this->ip = $ip;
+            $this->hitKeys = [];
             $this->limit($action, self::LIMITS[$action], 3600);
             $this->housekeepingDue();
             return [200, $this->$action($in)];
         } catch (Fail $f) {
+            // Rueckfrage nach dem Google-Nachweis: die App wiederholt gleich mit Nachweis -> nicht doppelt zaehlen
+            if ($f->error === 'integrity_required') $this->unlimit();
             return [$f->status, ['error' => $f->error] + $f->extra];
         }
     }
@@ -315,9 +323,16 @@ final class Service
         $k = hash('sha256', ($this->cfg['ip_salt'] ?? '') . '|' . ipBucket($this->ip) . "|$bucket|$end");
         $this->db->prepare('INSERT INTO hits (k, win, n) VALUES (?, ?, 1)
                             ON CONFLICT(k) DO UPDATE SET n = n + 1')->execute([$k, $end]);
+        $this->hitKeys[] = $k;
         $st = $this->db->prepare('SELECT n FROM hits WHERE k = ?');
         $st->execute([$k]);
         if ((int)$st->fetchColumn() > $max) throw new Fail(429, 'rate_limit');
+    }
+
+    /** Zaehler dieser Anfrage zuruecknehmen (siehe integrity_required) */
+    private function unlimit(): void
+    {
+        foreach ($this->hitKeys as $k) $this->db->prepare('UPDATE hits SET n = n - 1 WHERE k = ? AND n > 0')->execute([$k]);
     }
 
     /** Aufraeumen hoechstens alle 10 min, angestossen von der naechsten Anfrage */

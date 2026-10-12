@@ -112,4 +112,5 @@
     <string name="guest_err_format">Das ist keine gültige Einladung.</string>
     <string name="guest_err_no_reply">Keine Antwort vom Heimnetz.</string>
     <string name="guest_err_service_off">Der Schlüsseldienst wurde abgeschaltet. Bitte den Besitzer um Vollzugriff.</string>
+    <string name="guest_err_integrity">Gastzugang auf diesem Handy nicht möglich (App nicht aus Google Play oder Gerät nicht zugelassen).</string>
 </resources>

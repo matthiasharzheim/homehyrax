@@ -356,7 +356,7 @@ check('Anfragebremse bind (Raten des Geheimnisses)', $s === 429 && $r['error'] =
 // --- Play Integrity (nachgebaut) ---
 $ti = new T(true);
 [$s, $r] = $ti->call('/v1/health', [], 'GET');
-check('health integrity an', $r['integrity'] === true, $r);
+check('health integrity an', $r['integrity'] === true && array_key_exists('project', $r), $r);
 [$s, $r] = create($ti, $owner);
 check('create ohne Token', $s === 401 && $r['error'] === 'integrity_required', $r);
 $ts = $ti->now;
@@ -382,6 +382,16 @@ check('key mit Token', $s === 200, $r);
 [$s, $r] = $dev->req($ti, 'key', $inv['id']);
 check('danach wieder 24 h ohne Token', $s === 200, $r);
 
+$tc = new T(true);
+$ok30 = true;
+for ($i = 0; $i < 30; $i++) {
+    $o = b64u(random_bytes(32));
+    [$s1] = create($tc, $o);
+    $ts = $tc->now; $n = T::nonce(); $oh = hash('sha256', HHKeys\unb64u($o));
+    [$s2] = $tc->call('/v1/create', ['owner' => $o, 'ts' => $ts, 'nonce' => $n, 'integrity' => tok(requestHash("create|$oh|$ts|$n"))]);
+    $ok30 = $ok30 && $s1 === 401 && $s2 === 200;
+}
+check('Rueckfrage nach Nachweis zaehlt nicht gegen die Bremse', $ok30);
 [$s, $r] = create($ti, $owner, ['integrity' => 'zu-kurz']);
 check('offensichtlich ungueltiges Token ohne Google-Aufruf', $s === 403 && $r['reason'] === 'token', $r);
 $ti->now += 86400;  // Zwischenspeicher abgelaufen -> jeder key-Abruf fragt Google
@@ -418,7 +428,7 @@ file_put_contents($saFile, json_encode(['client_email' => 'x@y.iam.gserviceaccou
                                         'token_uri' => 'https://oauth2.googleapis.com/token']));
 $gdb = new PDO('sqlite::memory:');
 new Service($gdb, ['master_key' => base64_encode(random_bytes(32))], null); // legt Tabellen an
-$g = new FakeGoogle(['service_account' => $saFile, 'package' => 'de.camperflower.homehyrax'], $gdb);
+$g = new FakeGoogle(['service_account' => $saFile, 'package' => 'de.camperflower.homehyrax', 'integrity_level' => 'device', 'cloud_project' => '123456789012'], $gdb);
 $good = ['requestDetails' => ['requestPackageName' => 'de.camperflower.homehyrax', 'requestHash' => 'H',
                               'timestampMillis' => (string)(int)(microtime(true) * 1000)],
          'appIntegrity' => ['appRecognitionVerdict' => 'PLAY_RECOGNIZED', 'packageName' => 'de.camperflower.homehyrax'],
@@ -431,10 +441,22 @@ check('Integrity umgebaute App', $g('t', 'H') === 'app');
 $g->payload = $good;
 $g->payload['deviceIntegrity']['deviceRecognitionVerdict'] = [];
 check('Integrity kein echtes Geraet', $g('t', 'H') === 'device');
+// Stufe 'strong' (wahlweise): nur Geraete-Integritaet reicht nicht, Sicherheitschip noetig
+$gs = new FakeGoogle(['service_account' => $saFile, 'package' => 'de.camperflower.homehyrax', 'integrity_level' => 'strong', 'cloud_project' => '123456789012'], $gdb);
+$gs->payload = $good;
+check('strong: nur MEETS_DEVICE_INTEGRITY abgelehnt', $gs('t', 'H') === 'device');
+$gs->payload['deviceIntegrity']['deviceRecognitionVerdict'] = ['MEETS_DEVICE_INTEGRITY', 'MEETS_STRONG_INTEGRITY'];
+check('strong: mit MEETS_STRONG_INTEGRITY ok', $gs('t', 'H') === null);
 $g->payload = array_replace_recursive($good, ['requestDetails' => ['timestampMillis' => '1000']]);
 check('Integrity altes Token', $g('t', 'H') === 'stale');
 $g->payload = array_replace_recursive($good, ['requestDetails' => ['requestPackageName' => 'evil']]);
 check('Integrity anderes Paket', $g('t', 'H') === 'package');
+try {
+    new FakeGoogle(['service_account' => $saFile, 'package' => 'de.camperflower.homehyrax', 'cloud_project' => ''], $gdb);
+    check('fehlende Projektnummer faellt auf', false);
+} catch (RuntimeException) {
+    check('fehlende Projektnummer faellt auf', true);
+}
 check('Google-Zugang zwischengespeichert', count(array_filter($g->calls, fn($u) => str_contains($u, 'oauth2'))) === 1, $g->calls);
 unlink($saFile);
 

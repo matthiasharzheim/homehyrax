@@ -110,6 +110,8 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("androidx.biometric:biometric:1.1.0")
+    // Google Play Integrity: Echtheitspruefung fuer den Gastzugang (Schluesseldienst entscheidet, ob er sie verlangt)
+    implementation("com.google.android.play:integrity:1.4.0")
     // biometric bringt Fragment 1.2 mit - zu alt fuer registerForActivityResult
     implementation("androidx.fragment:fragment-ktx:1.8.9")
     // Kamera: RTSP-Livebild (ExoPlayer + RTSP + PlayerView)

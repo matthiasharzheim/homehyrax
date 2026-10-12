@@ -112,4 +112,5 @@
     <string name="guest_err_format">That\'s not a valid invitation.</string>
     <string name="guest_err_no_reply">No reply from the home network.</string>
     <string name="guest_err_service_off">The key service has been switched off. Ask the owner for full access.</string>
+    <string name="guest_err_integrity">Guest access is not possible on this phone (app not from Google Play or device not approved).</string>
 </resources>

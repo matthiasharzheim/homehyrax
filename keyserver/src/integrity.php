@@ -19,6 +19,10 @@ class PlayIntegrity
             throw new \RuntimeException('service_account file missing or invalid');
         }
         $this->sa = $sa;
+        // ohne gueltige Projektnummer koennte keine App einen Nachweis holen -> sofort als Einstellungsfehler melden
+        if (!preg_match('/^[1-9][0-9]{4,19}$/', (string)($cfg['cloud_project'] ?? ''))) {
+            throw new \RuntimeException('cloud_project missing or invalid');
+        }
     }
 
     /** @return ?string null = in Ordnung, sonst Grund der Ablehnung */
@@ -37,8 +41,11 @@ class PlayIntegrity
         if (abs((int)($req['timestampMillis'] ?? 0) - (int)(microtime(true) * 1000)) > self::MAX_AGE_MS) return 'stale';
         if (($p['appIntegrity']['appRecognitionVerdict'] ?? '') !== 'PLAY_RECOGNIZED') return 'app';
         if (($p['appIntegrity']['packageName'] ?? '') !== $pkg) return 'package';
+        // 'device' (Standard) = echtes Geraet, laeuft auf fast allen Handys. 'strong' = Sicherheitschip + aktuelles
+        // Sicherheitsupdate, schwer vorzutaeuschen, sperrt aber aeltere/nicht aktualisierte Handys aus
+        $need = ($this->cfg['integrity_level'] ?? 'device') === 'strong' ? 'MEETS_STRONG_INTEGRITY' : 'MEETS_DEVICE_INTEGRITY';
         $device = $p['deviceIntegrity']['deviceRecognitionVerdict'] ?? [];
-        if (!is_array($device) || !in_array('MEETS_DEVICE_INTEGRITY', $device, true)) return 'device';
+        if (!is_array($device) || !in_array($need, $device, true)) return 'device';
         return null;
     }
 
