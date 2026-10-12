@@ -286,4 +286,10 @@
     <string name="about_company">Camperflower GmbH</string>
     <string name="share_trust_hint">Only share with people you would also give your house key to.</string>
     <string name="main_import_preview_byname">Will use your existing connection (by name) – only import if you trust the file:\n%1$s</string>
+    <string name="guest_state_blocked">Blocked by the owner</string>
+    <string name="guest_state_expired">Expired</string>
+    <string name="guest_state_gone">Access ended</string>
+    <string name="guest_remove">Remove guest access</string>
+    <string name="guest_remove_title">Remove guest access?</string>
+    <string name="guest_remove_text">Removes all tiles of this guest access from this phone.</string>
 </resources>

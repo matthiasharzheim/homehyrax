@@ -239,6 +239,8 @@ class MainActivity : FragmentActivity() {
         var tunnels by mutableStateOf(emptyList<Tunnel>())
         var pinnedIds by mutableStateOf(emptySet<String>())
         var loaded by mutableStateOf(false)
+        /** zaehlt bei jedem Neuladen hoch: Gast-Zustaende (SharedPreferences) neu lesen, auch wenn die Listen gleich sind */
+        var tick by mutableIntStateOf(0)
         /**
          * Geheimnisse der offenen Seite (Passwoerter, WireGuard-Konfiguration, Auth-Key): ueberstehen
          * das Drehen, landen aber nie im Instance-State (der liegt ausserhalb der App-Verschluesselung).
@@ -341,6 +343,7 @@ class MainActivity : FragmentActivity() {
             if (seq != reloadSeq) return@launch   // ein neuerer Ladevorgang laeuft schon
             apps = r.first; tunnels = r.second; pinnedIds = r.third
             ui.loaded = true
+            ui.tick++
         }
     }
 
@@ -627,6 +630,7 @@ class MainActivity : FragmentActivity() {
         val ctx = LocalContext.current
         var menu by remember { mutableStateOf(false) }
         var confirmDelete by remember { mutableStateOf(false) }
+        var confirmRemoveGuest by remember { mutableStateOf(false) }
         // Symbol im Hintergrund zeichnen (liest ggf. ein Bild aus dem Speicher)
         val icon by produceState<ImageBitmap?>(null, app, apps) {
             value = withContext(Dispatchers.Default) { runCatching { Shortcuts.roundIcon(ctx, app, 192).asImageBitmap() }.getOrNull() }
@@ -659,8 +663,16 @@ class MainActivity : FragmentActivity() {
                     Spacer(Modifier.height(10.dp))
                     Text(app.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val kindText = stringResource(when { app.isAction -> R.string.main_kind_action; app.isCamera -> R.string.main_kind_camera; else -> R.string.main_kind_web })
-                    Text(if (app.isGuest) kindText + " · " + stringResource(R.string.guest_tile) else kindText, style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold, color = accent)
+                    // Gast: zuletzt festgestellter Zustand (gesperrt/abgelaufen/beendet) in Rot statt der Art
+                    val gState = remember(app, ui.tick) { app.guest?.let { Guest.state(ctx, it) } }
+                    val gText = when (gState) {
+                        "blocked" -> stringResource(R.string.guest_state_blocked)
+                        "expired" -> stringResource(R.string.guest_state_expired)
+                        "gone" -> stringResource(R.string.guest_state_gone)
+                        else -> null
+                    }
+                    Text(gText ?: if (app.isGuest) kindText + " · " + stringResource(R.string.guest_tile) else kindText, style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold, color = if (gText != null) MaterialTheme.colorScheme.error else accent)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (app.tunnelId != null) {
                             Icon(Icons.Filled.Lock, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
@@ -683,10 +695,25 @@ class MainActivity : FragmentActivity() {
                             onClick = { menu = false; Shortcuts.pin(ctx, app) })
                         DropdownMenuItem(text = { Text(stringResource(R.string.main_delete)) }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
                             onClick = { menu = false; confirmDelete = true })
+                        if (app.isGuest) DropdownMenuItem(text = { Text(stringResource(R.string.guest_remove)) }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
+                            onClick = { menu = false; confirmRemoveGuest = true })
                     }
                 }
             }
         }
+        if (confirmRemoveGuest) AlertDialog(
+            onDismissRequest = { confirmRemoveGuest = false },
+            title = { Text(stringResource(R.string.guest_remove_title)) },
+            text = { Text(stringResource(R.string.guest_remove_text)) },
+            confirmButton = { TextButton(onClick = {
+                confirmRemoveGuest = false
+                val inv = app.guest ?: return@TextButton
+                val gone = apps.filter { it.guest == inv }.map { it.id }
+                if (safeStore { store.deleteGuestAccess(inv) }) gone.forEach { Shortcuts.remove(ctx, it) }
+                reload()
+            }) { Text(stringResource(R.string.guest_remove)) } },
+            dismissButton = { TextButton(onClick = { confirmRemoveGuest = false }) { Text(stringResource(R.string.main_cancel)) } },
+        )
         if (confirmDelete) AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(R.string.main_delete_title, app.name)) },

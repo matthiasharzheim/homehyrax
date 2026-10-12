@@ -276,10 +276,33 @@ object Guest {
 
     /** Geraeteschluessel einer geloeschten Gast-Verbindung entfernen. */
     fun forgetDevice(t: Tunnel) {
-        runCatching {
-            val id = JSONObject(t.config).getString("inv")
-            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias(id))
+        runCatching { forgetInvite(ctxFree = null, JSONObject(t.config).getString("inv")) }
+    }
+
+    /** Geraeteschluessel (und gemerkten Zustand) einer Einladung entfernen. */
+    fun forgetInvite(ctxFree: Context?, inviteId: String) {
+        runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias(inviteId)) }
+        ctxFree?.getSharedPreferences("guest", Context.MODE_PRIVATE)?.edit()?.remove("state_$inviteId")?.apply()
+    }
+
+    /**
+     * Zuletzt festgestellter Zustand eines Gastzugangs fuer die Kachel: "blocked", "expired", "gone" oder null (gilt
+     * bzw. unbekannt). Wird bei jeder Schluessel-Abfrage aktualisiert (Antippen, Pruefung bei offener Kachel).
+     */
+    fun state(ctx: Context, inviteId: String): String? =
+        ctx.getSharedPreferences("guest", Context.MODE_PRIVATE).getString("state_$inviteId", null)
+
+    private fun rememberState(ctx: Context, inviteId: String, code: String?) {
+        val s = when (code) {
+            null -> null
+            "blocked" -> "blocked"
+            "expired" -> "expired"
+            "unknown", "service_off", "not_bound", "bad_signature" -> "gone"
+            else -> return   // Netzfehler, Bremse o. ae.: Zustand unveraendert lassen
         }
+        val prefs = ctx.getSharedPreferences("guest", Context.MODE_PRIVATE)
+        if (prefs.getString("state_$inviteId", null) == s) return
+        prefs.edit().apply { if (s == null) remove("state_$inviteId") else putString("state_$inviteId", s) }.apply()
     }
 
     // ================================================================ Schluesseldienst
@@ -330,6 +353,7 @@ object Guest {
             server(ctx, force = true)   // abgeschaltet? dann service_off statt "nicht erreichbar"
             throw Failure("network")
         }
+        if (status == 200 && action == "key" && sign != null) rememberState(ctx, sign, null)
         val o = runCatching { JSONObject(res) }.getOrElse {
             server(ctx, force = true)   // Dienst entfernt (z. B. 404-Seite des Hosters)?
             throw Failure("server")
@@ -342,6 +366,7 @@ object Guest {
         }
         // Schluesseldienst verlangt die Echtheitspruefung (nur bei create/bind/key, hoechstens einmal am Tag je Geraet)
         if (code == "integrity_required" && !integrity) return call(ctx, action, body, sign, retry, integrity = true)
+        if (action == "key" && sign != null) rememberState(ctx, sign, code)
         throw Failure(code)
     }
 

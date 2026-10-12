@@ -286,4 +286,10 @@
     <string name="about_company">Camperflower GmbH</string>
     <string name="share_trust_hint">Nur mit jemandem teilen, dem du auch deinen Wohnungsschlüssel geben würdest.</string>
     <string name="main_import_preview_byname">Nutzen deine vorhandene Verbindung (per Name) – nur übernehmen, wenn du der Datei vertraust:\n%1$s</string>
+    <string name="guest_state_blocked">Vom Besitzer gesperrt</string>
+    <string name="guest_state_expired">Abgelaufen</string>
+    <string name="guest_state_gone">Zugang beendet</string>
+    <string name="guest_remove">Gastzugang entfernen</string>
+    <string name="guest_remove_title">Gastzugang entfernen?</string>
+    <string name="guest_remove_text">Entfernt alle Kacheln dieses Gastzugangs von diesem Handy.</string>
 </resources>

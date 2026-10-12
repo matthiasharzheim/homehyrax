@@ -362,6 +362,14 @@ class Store(private val ctx: Context) {
         }.start()
     }
 
+    /** Gastzugang auf diesem Handy ganz entfernen: alle Eintraege dieser Einladung, ihre Verbindung, Geraeteschluessel. */
+    fun deleteGuestAccess(inviteId: String) {
+        tunnels().filter { it.isGuest && runCatching { JSONObject(it.config).getString("inv") }.getOrNull() == inviteId }
+            .forEach { deleteTunnel(it.id) }
+        apps().filter { it.guest == inviteId }.forEach { deleteApp(it.id) }
+        Guest.forgetInvite(ctx, inviteId)
+    }
+
     // ---- Gastzugaenge, die ich verschickt habe (Besitzer-Seite) ----
     private val invitesFile = File(ctx.filesDir, "invites.json")
     private val ownerFile = File(ctx.filesDir, "owner.key")
