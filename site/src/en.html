@@ -377,13 +377,15 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
           </ol>
           <div class="note"><svg><use href="#i-warn"/></svg><p>Battery cameras without a base station (e.g. Reolink Argus, many eufyCams) usually offer no local stream. Cloud-only cameras are not supported.</p></div>
 </div></details>
-<details id="g-share"><summary><svg><use href="#i-share"/></svg>Share with your family</summary><div>
+<details id="g-share"><summary><svg><use href="#i-share"/></svg>Sharing – as guest or with full access</summary><div>
           <ol class="steps">
-            <li>On your phone: <span class="ui">⋮</span> → <span class="ui">Share HomeHyrax</span>, choose entries and tunnels → <span class="ui">Show QR code</span> or <span class="ui">Send as file (with images)</span>.</li>
-            <li>On the other phone: install HomeHyrax → <span class="ui">⋮</span> → <span class="ui">Import HomeHyrax</span> → scan the code or <span class="ui">Open received file</span>.</li>
-            <li>A preview shows what is new or updated. Existing entries keep their connection and passwords.</li>
+            <li>On your phone: <span class="ui">⋮</span> → <span class="ui">Share HomeHyrax</span> → tick the entries.</li>
+            <li><span class="ui">Share as guest</span> (recommended): the other person never sees keys or passwords, you can block them at any time, optionally with an expiry date. Or <span class="ui">Full access</span>: hands over everything and cannot be taken back.</li>
+            <li>Fill in <span class="ui">For whom?</span> → <span class="ui">Share</span> → show the QR code or <span class="ui">Send as file (with images)</span>, e.g. via WhatsApp.</li>
+            <li>On the other phone: tap the file or <span class="ui">⋮</span> → <span class="ui">Import HomeHyrax</span> → scan the code.</li>
+            <li>Block, unblock, change validity: <span class="ui">Share HomeHyrax</span> → <span class="ui">Shared with</span> at the bottom.</li>
           </ol>
-          <div class="note"><svg><use href="#i-warn"/></svg><p>The code contains keys for your home network – only let it be scanned directly from the screen. For WireGuard, better create a <b>separate connection</b> for each phone. Tailscale is shared without sign-in, the other phone signs in itself.</p></div>
+          <div class="note"><svg><use href="#i-warn"/></svg><p>Only share with people you would also give your house key to. As guest, WireGuard entries use a tunnel that can be blocked, all others work only in your home Wi-Fi. An invitation works only on the first phone that opens it; full access works only once and for 7 days. When sharing, the app asks our key service; if it is unreachable, full access offers a permanent file instead (<a href="https://camperflower.de/homehyrax-datenschutz/">privacy</a>).</p></div>
 </div></details>
 <details id="g-detect"><summary><svg><use href="#i-wifi"/></svg>How HomeHyrax knows whether you're home</summary><div>
           <ul class="ticks">
@@ -442,7 +444,7 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
     </div>
     <div class="grid g3">
       <div class="card"><div class="ico c"><svg><use href="#i-key"/></svg></div><h3>Encrypted</h3><p class="muted">Keys and passwords AES-GCM with Android Keystore.</p></div>
-      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>Nothing uploaded</h3><p class="muted">No account, no logs, no ads, no tracking.</p></div>
+      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>No tracking</h3><p class="muted">No account, no logs, no ads. Only sharing via invitation uses our key service.</p></div>
       <div class="card"><div class="ico y"><svg><use href="#i-lock"/></svg></div><h3>Locked down</h3><p class="muted">Local proxy with a new password on every start.</p></div>
     </div>
     <p class="muted" style="text-align:center;margin-top:24px"><a href="https://camperflower.de/homehyrax-datenschutz/">Privacy policy</a></p>

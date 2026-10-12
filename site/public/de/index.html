@@ -416,13 +416,15 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
           </ol>
           <div class="note"><svg><use href="#i-warn"/></svg><p>Akku-Kameras ohne Basisstation (z. B. Reolink Argus, viele eufyCams) bieten meist keinen lokalen Stream. Reine Cloud-Kameras werden nicht unterstützt.</p></div>
 </div></details>
-<details id="g-share"><summary><svg><use href="#i-share"/></svg>Mit der Familie teilen</summary><div>
+<details id="g-share"><summary><svg><use href="#i-share"/></svg>Teilen – als Gast oder mit Vollzugriff</summary><div>
           <ol class="steps">
-            <li>Auf deinem Handy: <span class="ui">⋮</span> → <span class="ui">HomeHyrax teilen</span>, Einträge und Tunnel wählen → <span class="ui">QR-Code zeigen</span> oder <span class="ui">Als Datei senden (mit Bildern)</span>.</li>
-            <li>Auf dem anderen Handy: HomeHyrax installieren → <span class="ui">⋮</span> → <span class="ui">HomeHyrax übernehmen</span> → Code scannen oder <span class="ui">Empfangene Datei öffnen</span>.</li>
-            <li>Eine Vorschau zeigt, was neu ist oder aktualisiert wird. Vorhandene Einträge behalten ihre Verbindung und Passwörter.</li>
+            <li>Auf deinem Handy: <span class="ui">⋮</span> → <span class="ui">HomeHyrax teilen</span> → Einträge anhaken.</li>
+            <li><span class="ui">Als Gast teilen</span> (empfohlen): Der andere sieht nie Schlüssel oder Passwörter, du kannst ihn jederzeit sperren, optional mit Ablaufdatum. Oder <span class="ui">Vollzugriff</span>: gibt alles weiter und lässt sich nicht entziehen.</li>
+            <li><span class="ui">Für wen?</span> eintragen → <span class="ui">Teilen</span> → QR-Code zeigen oder <span class="ui">Als Datei senden (mit Bildern)</span>, z. B. per WhatsApp.</li>
+            <li>Auf dem anderen Handy: Datei antippen oder <span class="ui">⋮</span> → <span class="ui">HomeHyrax übernehmen</span> → Code scannen.</li>
+            <li>Sperren, freigeben, Gültigkeit ändern: <span class="ui">HomeHyrax teilen</span> → unten <span class="ui">Geteilt mit</span>.</li>
           </ol>
-          <div class="note"><svg><use href="#i-warn"/></svg><p>Der Code enthält Schlüssel für dein Heimnetz – nur direkt vom Bildschirm scannen lassen. Bei WireGuard besser für jedes Handy eine <b>eigene Verbindung</b> anlegen. Tailscale wird ohne Anmeldung geteilt, das andere Handy meldet sich selbst an.</p></div>
+          <div class="note"><svg><use href="#i-warn"/></svg><p>Nur mit jemandem teilen, dem du auch deinen Wohnungsschlüssel geben würdest. Als Gast gehen WireGuard-Einträge über einen sperrbaren Tunnel, alle anderen nur im Heim-WLAN. Eine Einladung funktioniert nur auf dem ersten Handy, das sie öffnet; Vollzugriff gilt nur einmal und 7 Tage. Beim Teilen fragt die App unseren Schlüsseldienst; ist er nicht erreichbar, bietet sie bei Vollzugriff eine dauerhaft gültige Datei an (<a href="https://camperflower.de/homehyrax-datenschutz/">Datenschutz</a>).</p></div>
 </div></details>
 <details id="g-detect"><summary><svg><use href="#i-wifi"/></svg>So weiß HomeHyrax, ob du zuhause bist</summary><div>
           <ul class="ticks">
@@ -481,7 +483,7 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
     </div>
     <div class="grid g3">
       <div class="card"><div class="ico c"><svg><use href="#i-key"/></svg></div><h3>Verschlüsselt</h3><p class="muted">Schlüssel und Passwörter AES-GCM mit Android-Keystore.</p></div>
-      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>Nichts hochgeladen</h3><p class="muted">Kein Konto, keine Logs, keine Werbung, kein Tracking.</p></div>
+      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>Kein Tracking</h3><p class="muted">Kein Konto, keine Logs, keine Werbung. Nur das Teilen per Einladung nutzt unseren Schlüsseldienst.</p></div>
       <div class="card"><div class="ico y"><svg><use href="#i-lock"/></svg></div><h3>Abgeschottet</h3><p class="muted">Lokaler Proxy mit neuem Passwort bei jedem Start.</p></div>
     </div>
     <p class="muted" style="text-align:center;margin-top:24px"><a href="https://camperflower.de/homehyrax-datenschutz/">Datenschutzerklärung</a></p>

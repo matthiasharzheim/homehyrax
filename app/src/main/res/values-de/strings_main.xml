@@ -112,7 +112,7 @@
     <string name="main_info_novpn_title">Kein normales VPN</string>
     <string name="main_info_novpn_text">Der Tunnel läuft nur in dieser App und nur für deine Heim-Adressen. Andere Apps und das restliche Internet merken nichts – ein anderes VPN kann gleichzeitig laufen. Nach dem Schließen baut sich der Tunnel nach 90 s ab.</string>
     <string name="main_info_security_title">Sicherheit</string>
-    <string name="main_info_security_text">WireGuard-Schlüssel und Passwörter liegen verschlüsselt (Android-Keystore), der Tailscale-Geräteschlüssel im geschützten App-Speicher. Nichts wird hochgeladen: keine Logs, keine Werbung, keine Datenerhebung. Auf Wunsch Fingerabdruck vor dem Öffnen.</string>
+    <string name="main_info_security_text">WireGuard-Schlüssel und Passwörter liegen verschlüsselt (Android-Keystore), der Tailscale-Geräteschlüssel im geschützten App-Speicher. Keine Logs, keine Werbung, kein Tracking. Nur beim Teilen über Einladung fragt die App unseren Schlüsseldienst – er kennt keine Heimnetz-Adressen und keine Zugangsdaten. Auf Wunsch Fingerabdruck vor dem Öffnen.</string>
     <string name="main_info_contact_title">Kontakt</string>
     <string name="main_info_contact_text">Fragen oder Änderungswünsche? Schreib uns:</string>
     <string name="main_info_mail">info@camperflower.de</string>

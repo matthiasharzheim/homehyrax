@@ -112,7 +112,7 @@
     <string name="main_info_novpn_title">Not a regular VPN</string>
     <string name="main_info_novpn_text">The tunnel runs only inside this app and only for your home addresses. Other apps and the rest of the internet notice nothing – another VPN can run at the same time. After closing, the tunnel shuts down after 90 s.</string>
     <string name="main_info_security_title">Security</string>
-    <string name="main_info_security_text">WireGuard keys and passwords are stored encrypted (Android Keystore), the Tailscale device key in the app\'s protected storage. Nothing is uploaded: no logs, no ads, no data collection. Optional fingerprint before opening.</string>
+    <string name="main_info_security_text">WireGuard keys and passwords are stored encrypted (Android Keystore), the Tailscale device key in the app\'s protected storage. No logs, no ads, no tracking. Only when sharing via invitation does the app ask our key service – it knows no home addresses and no credentials. Optional fingerprint before opening.</string>
     <string name="main_info_contact_title">Contact</string>
     <string name="main_info_contact_text">Questions or change requests? Write to us:</string>
     <string name="main_info_mail">info@camperflower.de</string>
