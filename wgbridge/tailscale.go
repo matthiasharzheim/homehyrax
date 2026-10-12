@@ -18,6 +18,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,13 +55,24 @@ const tsLogLines = 80
 // logf sammelt das Tailscale-Protokoll im Speicher (kein Upload), damit die
 // App bei Problemen zeigen kann, woran es haengt.
 func (t *tsTunnel) logf(format string, args ...any) {
-	line := time.Now().Format("15:04:05 ") + strings.TrimSpace(fmt.Sprintf(format, args...))
+	line := time.Now().Format("15:04:05 ") + maskSecrets(strings.TrimSpace(fmt.Sprintf(format, args...)))
 	t.mu.Lock()
 	t.log = append(t.log, line)
 	if len(t.log) > tsLogLines {
 		t.log = t.log[len(t.log)-tsLogLines:]
 	}
 	t.mu.Unlock()
+}
+
+var (
+	reAuthURL = regexp.MustCompile(`(/a/|/register/)[A-Za-z0-9:_-]+`)
+	reTSKey   = regexp.MustCompile(`tskey-[A-Za-z0-9-]+`)
+)
+
+// maskSecrets: Anmelde-Links (…/a/<code>) und Auth-Keys (tskey-…) nicht ins kopierbare Protokoll
+func maskSecrets(s string) string {
+	s = reAuthURL.ReplaceAllString(s, "${1}…")
+	return reTSKey.ReplaceAllString(s, "tskey-…")
 }
 
 // TailscaleLog liefert die letzten Protokollzeilen (neueste unten).

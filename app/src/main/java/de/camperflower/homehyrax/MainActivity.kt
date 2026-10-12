@@ -346,6 +346,15 @@ class MainActivity : FragmentActivity() {
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
+    /** In die Zwischenablage, als sensibel markiert (Android 13+: keine Vorschau, nicht in Tastatur-Vorschlaegen) */
+    private fun copySensitive(text: String) {
+        val clip = android.content.ClipData.newPlainText("HomeHyrax", text)
+        if (Build.VERSION.SDK_INT >= 33) clip.description.extras = android.os.PersistableBundle().apply {
+            putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+        }
+        getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(clip)
+    }
+
     /** Speichern mit Hinweis statt Absturz, falls der Keystore streikt. */
     private inline fun safeStore(block: () -> Unit): Boolean = try {
         block(); true
@@ -765,9 +774,10 @@ class MainActivity : FragmentActivity() {
                 if (Net.connect(t) != null) return false
                 Net.route(app, t.id)
             }
+            val real = withContext(Dispatchers.IO) { Guest.withSecrets(this@MainActivity, app) }
             showLive(true)
             val first = CompletableDeferred<Boolean>()
-            h = CameraStream.open(this, app)
+            h = CameraStream.open(this, real)
             h.player.setVideoTextureView(texture)
             h.player.addListener(object : Player.Listener {
                 override fun onRenderedFirstFrame() { first.complete(true) }
@@ -885,7 +895,7 @@ class MainActivity : FragmentActivity() {
             val app = current()
             if (app.host.isEmpty()) { toast(getString(if (app.isAction && aGen != 0) R.string.main_err_shelly_ip else R.string.main_err_address)); return null }
             // Loopback/Link-Local: waere der eigene lokale Proxy oder eine andere App auf dem Handy
-            if (Hosts.isForbidden(app.host) || (app.isAction && aGen != 0 && Hosts.isForbidden(app.action?.ip))) {
+            if (Hosts.isForbidden(app.host) || (app.isAction && aGen != 0 && !Hosts.isValidDevice(app.action?.ip))) {
                 toast(getString(R.string.main_err_local_address)); return null
             }
             val ok = safeStore {
@@ -1924,7 +1934,7 @@ class MainActivity : FragmentActivity() {
                     val log = remember(st, showLog) { Wgbridge.tailscaleLog(t.id).ifEmpty { noLog } }
                     Text(log.lines().takeLast(25).joinToString("\n"),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp))
-                    TextButton(onClick = { clipboard.setText(AnnotatedString(Wgbridge.tailscaleLog(t.id))); toast(getString(R.string.main_log_copied)) }) {
+                    TextButton(onClick = { copySensitive(Wgbridge.tailscaleLog(t.id)); toast(getString(R.string.main_log_copied)) }) {
                         Text(stringResource(R.string.main_copy_log))
                     }
                 }
@@ -2239,6 +2249,8 @@ class MainActivity : FragmentActivity() {
                     if (p.newApps.isNotEmpty()) Text(stringResource(R.string.main_import_preview_new, p.newApps.joinToString()))
                     if (p.changedApps.isNotEmpty()) Text(stringResource(R.string.main_import_preview_changed, p.changedApps.joinToString()))
                     if (p.newTunnels.isNotEmpty()) Text(stringResource(R.string.main_import_preview_tunnels, p.newTunnels.joinToString("\n")))
+                    if (p.byName.isNotEmpty()) Text(stringResource(R.string.main_import_preview_byname, p.byName.joinToString("\n")),
+                        color = MaterialTheme.colorScheme.error)
                     if (p.skipped.isNotEmpty()) Text(stringResource(R.string.main_import_preview_skipped, p.skipped.joinToString()),
                         color = MaterialTheme.colorScheme.error)
                     if (p.changedApps.isNotEmpty()) Text(stringResource(R.string.main_import_preview_note),

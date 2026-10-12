@@ -462,7 +462,8 @@ class WebAppActivity : FragmentActivity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val u = request.url
             val isWeb = u.scheme in listOf("http", "https")
-            val sameApp = isWeb && (u.host.equals(app.host, ignoreCase = true) || Hosts.isPrivate(u.host))
+            // Gast-Eintrag: nur die eigene Adresse (nicht weitere Geraete im Heimnetz des Besitzers)
+            val sameApp = isWeb && (u.host.equals(app.host, ignoreCase = true) || (!app.isGuest && Hosts.isPrivate(u.host)))
             if (sameApp || u.scheme in listOf("about", "data", "blob", "javascript")) return false
             // Andere Apps nur auf ausdruecklichen Tipp oeffnen, nie per Skript/Weiterleitung
             if (!request.hasGesture()) return true

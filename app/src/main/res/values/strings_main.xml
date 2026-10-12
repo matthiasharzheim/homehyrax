@@ -285,4 +285,5 @@
     <string name="about_how">How it works</string>
     <string name="about_company">Camperflower GmbH</string>
     <string name="share_trust_hint">Only share with people you would also give your house key to.</string>
+    <string name="main_import_preview_byname">Will use your existing connection (by name) – only import if you trust the file:\n%1$s</string>
 </resources>

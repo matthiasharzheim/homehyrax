@@ -476,6 +476,28 @@ object Hosts {
         return runCatching { java.net.InetAddress.getByName(h).address }.getOrNull()
     }
 
+    /**
+     * Adresse eines Geraets (Shelly): "host" oder "host:port", host = IP oder Name. Nichts davor (user@) oder
+     * dahinter (Pfad, ?, #), kein Loopback/Link-Local - sonst koennte eine Einladung auf den lokalen Proxy zeigen.
+     */
+    fun isValidDevice(addr: String?): Boolean {
+        val a = addr?.trim().orEmpty()
+        if (a.isEmpty() || a.any { it in "@/?#\\ " || it.isWhitespace() }) return false
+        val host: String
+        val port: String?
+        if (a.startsWith("[")) {
+            host = a.substringBefore(']').removePrefix("[")
+            port = a.substringAfter("]", "").removePrefix(":").ifEmpty { null }
+        } else if (a.count { it == ':' } == 1) {
+            host = a.substringBefore(':'); port = a.substringAfter(':')
+        } else {
+            host = a; port = null
+        }
+        if (port != null && (port.toIntOrNull() ?: 0) !in 1..65535) return false
+        if (host.isEmpty() || isForbidden(host)) return false
+        return ipBytes(host) != null || host.all { it.isLetterOrDigit() || it == '-' || it == '.' }
+    }
+
     /** Loopback, "irgendeine Adresse" oder Link-Local: als Ziel nicht erlaubt (lokaler Proxy, andere Apps). */
     fun isForbidden(host: String?): Boolean {
         val h = host?.trim()?.lowercase()?.removeSuffix(".").orEmpty()

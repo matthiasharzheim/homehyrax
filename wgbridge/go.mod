@@ -1,11 +1,11 @@
 module homehyrax/wgbridge
 
-go 1.26.6
+go 1.26.9
 
 require (
 	golang.org/x/crypto v0.57.0
 	golang.org/x/mobile v0.0.0-20260908204917-8b95e45f8d3e
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 	tailscale.com v1.102.5
 )

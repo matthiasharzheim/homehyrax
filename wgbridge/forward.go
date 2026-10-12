@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 // Portweiterleitung fuer Kameras: der Videoplayer (RTSP) kann keinen
@@ -17,6 +18,7 @@ type forward struct {
 	ln    net.Listener
 	mu    sync.Mutex
 	conns map[net.Conn]struct{}
+	active int // laufende Verbindungen (hoechstens 1)
 }
 
 var (
@@ -68,6 +70,23 @@ func (f *forward) track(c net.Conn, on bool) bool {
 
 func (f *forward) serve(client net.Conn, target string) {
 	defer client.Close()
+	// nur eine Verbindung gleichzeitig (der Player der App): 127.0.0.1 erreicht jede App auf dem Handy,
+	// eine zweite Verbindung bekommt kein Bild
+	busy := true
+	for i := 0; i < 10 && busy; i++ { // bis 500 ms warten: der Player baut evtl. gerade neu auf
+		f.mu.Lock()
+		if busy = f.active > 0; !busy {
+			f.active++
+		}
+		f.mu.Unlock()
+		if busy {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if busy {
+		return
+	}
+	defer func() { f.mu.Lock(); f.active--; f.mu.Unlock() }()
 	if !f.track(client, true) {
 		return
 	}

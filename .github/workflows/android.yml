@@ -93,6 +93,15 @@ jobs:
           GOMOBILE_TARGETS: ${{ github.event_name == 'workflow_dispatch' && 'android/arm64,android/arm,android/amd64' || 'android/arm64,android/arm' }}
         run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" ./build-go.sh
 
+      # Bekannte Sicherheitsluecken in Go und den Abhaengigkeiten (nur wenn der Go-Kern neu gebaut wird).
+      # Meldet als Warnung statt den Build zu stoppen: eine Luecke in einer Bibliothek soll den Hinweis
+      # sichtbar machen, nicht jedes App-Update blockieren
+      - name: govulncheck (Go-Kern)
+        if: steps.aar.outputs.cache-hit != 'true'
+        working-directory: wgbridge
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... || echo "::warning title=govulncheck::Bekannte Go-Sicherheitsluecken gefunden - Ausgabe im Log pruefen"
+
       # Sideload-Signatur nur, wenn das Secret existiert (Secrets fehlen bei PRs aus Forks)
       - name: Sideload-Schluessel
         if: env.HAS_SIDELOAD_KEY == 'true'

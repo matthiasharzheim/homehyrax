@@ -83,6 +83,8 @@ object Share {
         val newTunnels: List<String>,
         val skipped: List<String>,
         val needTunnel: List<String>,
+        /** neue Eintraege, die per Verbindungsname einer eigenen Verbindung zugeordnet werden ("Name → Verbindung") */
+        val byName: List<String> = emptyList(),
     ) {
         val isEmpty: Boolean get() = tunnels.isEmpty() && apps.isEmpty() && icons.isEmpty()
     }
@@ -127,6 +129,7 @@ object Share {
         val changedNames = ArrayList<String>()
         val skipped = ArrayList<String>()
         val need = ArrayList<String>()
+        val matched = ArrayList<String>()
         for (i in 0 until a.length()) {
             val j = a.optJSONObject(i) ?: continue
             val name = j.optString("n").trim().take(80)
@@ -136,7 +139,7 @@ object Share {
             val action = if (kind == KIND_WEB) null else ShellyAction.fromJson(j.optJSONObject("ac")) { it }
             // Ziel pruefen: nur http/https/rtsp, kein Loopback/Link-Local (lokaler Proxy, andere Apps)
             if (name.isEmpty() || uri.scheme?.lowercase() !in ALLOWED_SCHEMES || Hosts.isForbidden(uri.host) ||
-                (action != null && action.gen != 0 && Hosts.isForbidden(action.ip))) {
+                (action != null && action.gen != 0 && !Hosts.isValidDevice(action.ip))) {
                 skipped += name.ifEmpty { url.take(40) }; continue
             }
             val existing = haveApps.firstOrNull { it.url.equals(url, ignoreCase = true) }
@@ -156,8 +159,11 @@ object Share {
             } else {
                 val srcTunnel = j.optString("t").ifEmpty { null }
                 val tunnelName = j.optString("tn").ifEmpty { null }
-                val tunnelId = srcTunnel?.let { idMap[it] }
-                    ?: tunnelName?.let { n -> haveTunnels.firstOrNull { it.name.equals(n, ignoreCase = true) }?.id }
+                val byName = if (srcTunnel != null && idMap[srcTunnel] != null) null
+                    else tunnelName?.let { n -> haveTunnels.firstOrNull { it.name.equals(n, ignoreCase = true) } }
+                val tunnelId = srcTunnel?.let { idMap[it] } ?: byName?.id
+                // Zuordnung zu einer EIGENEN Verbindung nur ueber den Namen: in der Vorschau ausdruecklich zeigen
+                byName?.let { matched += "$name → ${it.name}" }
                 app = WebApp(
                     name = name, url = url, tunnelId = tunnelId,
                     color = j.optInt("c", 0xFF1F242B.toInt()), keepScreenOn = j.optBoolean("s"),
@@ -173,7 +179,7 @@ object Share {
             img?.let { icons[app.id] = it }
         }
         return Plan(newTunnels, planned.values.toList(), icons, newNames, changedNames,
-            newTunnels.map { "${it.name} (${it.endpoint.ifEmpty { "?" }})" }, skipped, need)
+            newTunnels.map { "${it.name} (${it.endpoint.ifEmpty { "?" }})" }, skipped, need, matched)
     }
 
     /** Geplanten Import in einem Schritt speichern (im Hintergrund aufrufen). */

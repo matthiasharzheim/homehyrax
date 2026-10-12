@@ -90,7 +90,7 @@ func Request(method, rawURL, user, pass, authMode string, timeoutMs int) (string
 		if sameOrigin(orig, final) {
 			switch {
 			case digest != "" && authMode != "basic":
-				auth, derr := digestAuth(digest, method, final.RequestURI(), user, pass)
+				auth, derr := digestAuth(digest, method, final.RequestURI(), user, pass, authMode == "digest")
 				if derr != nil {
 					resp.Body.Close()
 					return "", derr
@@ -149,7 +149,9 @@ func sameOrigin(a, b *url.URL) bool {
 }
 
 // digestAuth beantwortet eine Digest-Challenge (RFC 7616, qop=auth).
-func digestAuth(chal, method, uri, user, pass string) (string, error) {
+// sha256Only: Shelly Gen2+ spricht nur SHA-256 - ein Geraet, das MD5 verlangt, ist nicht der eigene Shelly
+// (z. B. fremdes WLAN mit gleichem Standardnetz); dann keine Antwort mit dem Passwort.
+func digestAuth(chal, method, uri, user, pass string, sha256Only bool) (string, error) {
 	p := map[string]string{}
 	for _, part := range splitParams(chal[len("digest "):]) {
 		k, v, ok := strings.Cut(part, "=")
@@ -158,6 +160,9 @@ func digestAuth(chal, method, uri, user, pass string) (string, error) {
 		}
 	}
 	var h func() hash.Hash
+	if sha256Only && !strings.EqualFold(p["algorithm"], "SHA-256") {
+		return "", fmt.Errorf("digest algorithm %q refused (expected SHA-256)", p["algorithm"])
+	}
 	switch strings.ToUpper(p["algorithm"]) {
 	case "", "MD5":
 		h = md5.New

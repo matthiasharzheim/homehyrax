@@ -144,23 +144,26 @@ class ActionActivity : FragmentActivity() {
             } else {
                 Net.route(target, null)
             }
+            // Gast: Passwort beim Schluesseldienst entsperren (gesperrt/abgelaufen -> kein Senden)
+            val real = runCatching { withContext(Dispatchers.IO) { Guest.withSecrets(this@ActionActivity, app).action } }
+                .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; fail(Guest.message(this@ActionActivity, it)); return@launch }
             state = State.Busy(getString(R.string.act_sending))
             sent = true
             val res = withContext(Dispatchers.IO) {
-                runCatching { Wgbridge.request("GET", url, act?.user.orEmpty(), act?.pass.orEmpty(), authMode(act), 8000) }
+                runCatching { Wgbridge.request("GET", url, real?.user.orEmpty(), real?.pass.orEmpty(), authMode(real), 8000) }
             }
             val out = res.getOrElse { e ->
                 // Zeitueberschreitung o. ae.: evtl. hat das Geraet trotzdem geschaltet -> Zustand nachfragen,
                 // sonst ausdruecklich darauf hinweisen, bevor jemand "Erneut" tippt
                 val msg = (getString(R.string.act_no_answer, target.host) + "\n${e.message ?: ""}").trim()
-                val now = if (act != null && act.gen != 0) readShelly(act).first else null
+                val now = if (real != null && real.gen != 0) readShelly(real).first else null
                 fail(msg + "\n" + (if (now != null) getString(R.string.act_state_now, stateWord(now)) else getString(R.string.act_maybe_done)))
                 return@launch
             }
             val status = out.substringBefore('\n').toIntOrNull() ?: 0
             if (status != 200) sent = false   // Geraet hat klar abgelehnt: nichts ausgefuehrt
             when (status) {
-                200 -> { buzz(); showResult(act, out.substringAfter('\n', "")) }
+                200 -> { buzz(); showResult(real, out.substringAfter('\n', "")) }
                 401 -> fail(getString(R.string.act_http_401))
                 404, 500 -> fail(getString(R.string.act_http_unknown_cmd, status))
                 else -> fail(getString(R.string.act_http_unexpected, status))

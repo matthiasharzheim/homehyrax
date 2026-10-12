@@ -285,4 +285,5 @@
     <string name="about_how">So funktioniert’s</string>
     <string name="about_company">Camperflower GmbH</string>
     <string name="share_trust_hint">Nur mit jemandem teilen, dem du auch deinen Wohnungsschlüssel geben würdest.</string>
+    <string name="main_import_preview_byname">Nutzen deine vorhandene Verbindung (per Name) – nur übernehmen, wenn du der Datei vertraust:\n%1$s</string>
 </resources>

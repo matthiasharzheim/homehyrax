@@ -15,3 +15,10 @@ demoheim-handy.conf
 *.keystore
 *.p12
 *.aab
+# Zugangsdaten und Schluessel nie einchecken (Schluesseldienst, Google-Dienstkonten, Umgebung)
+.env
+.env.*
+*.pem
+config.php
+play-integrity*.json
+*service-account*.json

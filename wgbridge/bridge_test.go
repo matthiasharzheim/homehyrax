@@ -311,6 +311,37 @@ func TestCoveringDeterministic(t *testing.T) {
 	}
 }
 
+// Gastzugang: ein Tunnel mit SetExplicitOnly deckt keine Adressen ueber AllowedIPs ab,
+// nur ausdrueckliche Routen fuehren hinein.
+func TestExplicitOnlyNotCovering(t *testing.T) {
+	mu.Lock()
+	saved := tunnels
+	tunnels = map[string]*tunnel{
+		"own":   {id: "own", cfg: &wgConfig{peers: []wgPeer{{allowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}}}},
+		"guest": {id: "guest", cfg: &wgConfig{peers: []wgPeer{{allowedIPs: []netip.Prefix{netip.MustParsePrefix("192.168.178.0/24")}}}}},
+	}
+	mu.Unlock()
+	SetExplicitOnly("guest", true)
+	defer func() { SetExplicitOnly("guest", false); mu.Lock(); tunnels = saved; mu.Unlock() }()
+	mu.Lock()
+	got := coveringLocked(netip.MustParseAddr("192.168.178.1"))
+	own := coveringLocked(netip.MustParseAddr("10.1.2.3"))
+	mu.Unlock()
+	if got != nil {
+		t.Fatalf("Gast-Tunnel deckt 192.168.178.1 ab (%s) - Gast kaeme ins ganze Heimnetz", got.id)
+	}
+	if own == nil || own.id != "own" {
+		t.Fatalf("eigener Tunnel deckt nicht mehr ab: %v", own)
+	}
+	SetExplicitOnly("guest", false)
+	mu.Lock()
+	got = coveringLocked(netip.MustParseAddr("192.168.178.1"))
+	mu.Unlock()
+	if got == nil || got.id != "guest" {
+		t.Fatalf("ohne explicitOnly sollte der Tunnel abdecken: %v", got)
+	}
+}
+
 // DNS-Rueckfall nur bei "Name nicht gefunden", nicht bei Verbindungsfehlern.
 func TestNameNotFound(t *testing.T) {
 	cases := []struct {
@@ -804,6 +835,20 @@ func (a *authServer) handler(chal string) http.HandlerFunc {
 			w.Header().Set("WWW-Authenticate", chal)
 		}
 		w.WriteHeader(http.StatusUnauthorized)
+	}
+}
+
+// Shelly Gen2 (authMode digest): MD5- oder Challenges ohne Algorithmus bekommen kein Passwort
+func TestDigestSHA256Only(t *testing.T) {
+	md5chal := `Digest realm="x", nonce="n1", qop="auth"`
+	if _, err := digestAuth(md5chal, "GET", "/rpc", "admin", "geheim", true); err == nil {
+		t.Fatal("MD5-Challenge im Gen2-Modus beantwortet")
+	}
+	if _, err := digestAuth(md5chal, "GET", "/rpc", "admin", "geheim", false); err != nil {
+		t.Fatalf("eigene URL (MD5) sollte gehen: %v", err)
+	}
+	if _, err := digestAuth(`Digest realm="x", nonce="n1", qop="auth", algorithm=SHA-256`, "GET", "/rpc", "admin", "geheim", true); err != nil {
+		t.Fatalf("SHA-256 sollte gehen: %v", err)
 	}
 }
 

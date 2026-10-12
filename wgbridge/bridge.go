@@ -40,6 +40,10 @@ var (
 	mu      sync.Mutex
 	tunnels = map[string]*tunnel{}
 	routes  = map[string]string{} // host (klein, ohne Port) -> Tunnel-ID
+	// Tunnel, die nur ueber ausdrueckliche Routen genutzt werden (Gastzugang): ihre AllowedIPs
+	// gelten nie fuer andere Adressen - der Gast erreicht nur die geteilten Eintraege, und ein
+	// geteilter Tunnel leitet keine eigenen Kacheln des Gastes um
+	explicitOnly = map[string]bool{}
 
 	// Stopp-Zaehler je ID (StopAll zaehlt fuer alle): ein Start, der waehrend
 	// eines Stopps lief, darf seinen Tunnel danach nicht mehr eintragen.
@@ -78,6 +82,18 @@ var startMu sync.Mutex
 // freshSec: so lange gilt ein Handshake als aktuell (WireGuard verwirft
 // Schluessel nach 180 s ohne neuen Handshake).
 const freshSec = 180
+
+// SetExplicitOnly: dieser Tunnel wird nur fuer Hosts mit ausdruecklicher Route genutzt (SetRoute),
+// nie ueber seine AllowedIPs fuer andere Adressen. Fuer Gastzugaenge vor StartTunnel setzen.
+func SetExplicitOnly(id string, on bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if on {
+		explicitOnly[id] = true
+	} else {
+		delete(explicitOnly, id)
+	}
+}
 
 // StartTunnel startet (oder behaelt) den Tunnel mit dieser ID. Laeuft er
 // bereits mit identischer Konfiguration, bleibt er; ohne aktuellen Handshake
@@ -149,6 +165,8 @@ func StopTunnel(id string) {
 	stopGen[id]++
 	t, ok := tunnels[id]
 	delete(tunnels, id)
+	// explicitOnly bleibt bewusst stehen: Net.connect setzt es getrennt vor StartTunnel - wuerde ein
+	// Stopp dazwischen es loeschen, liefe der Gast-Tunnel danach ueber alle AllowedIPs (ins ganze Heimnetz)
 	ts, isTS := tsTunnels[id]
 	delete(tsTunnels, id)
 	mu.Unlock()
@@ -402,7 +420,9 @@ func OverlappingTunnels() string {
 	defer mu.Unlock()
 	ids := make([]string, 0, len(tunnels))
 	for id := range tunnels {
-		ids = append(ids, id)
+		if !explicitOnly[id] { // Gastzugaenge decken nichts ueber AllowedIPs ab
+			ids = append(ids, id)
+		}
 	}
 	sort.Strings(ids)
 	hit := map[string]bool{}
@@ -434,6 +454,9 @@ func coveringLocked(ip netip.Addr) *tunnel {
 	var best *tunnel
 	bestBits := -1
 	for _, id := range ids {
+		if explicitOnly[id] {
+			continue
+		}
 		if b := tunnels[id].cfg.coverBits(ip); b > bestBits {
 			best, bestBits = tunnels[id], b
 		}

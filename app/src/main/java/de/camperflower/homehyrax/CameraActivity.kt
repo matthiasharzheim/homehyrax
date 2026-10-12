@@ -76,6 +76,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -210,11 +211,17 @@ class CameraActivity : FragmentActivity() {
 
     // ---------------------------------------------------------------- Ablauf
 
+    /** Eintrag mit entsperrtem Passwort fuer die laufende Wiedergabe (nur RAM) */
+    private var streamApp: WebApp? = null
+
     private fun start() {
         fallbackTried = false
         job?.cancel()
         job = lifecycleScope.launch {
             phase = Phase.Connecting(getString(R.string.cam_connecting))
+            // Gast: Kamera-Passwort beim Schluesseldienst entsperren (nur fuer diese Wiedergabe im RAM)
+            streamApp = runCatching { withContext(Dispatchers.IO) { Guest.withSecrets(this@CameraActivity, app) } }
+                .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; fail(Guest.message(this@CameraActivity, it)); return@launch }
             val t = tunnel
             val where = Net.where(app)
             if (t == null || where.home) {
@@ -242,7 +249,7 @@ class CameraActivity : FragmentActivity() {
 
     private fun play() {
         stopPlayer()
-        val h = runCatching { CameraStream.open(this, app) }
+        val h = runCatching { CameraStream.open(this, streamApp ?: app) }
             .getOrElse { fail(getString(R.string.cam_no_video, app.name) + "\n" + (it.message ?: "")); return }
         val p = h.player
         p.volume = if (muted) 0f else 1f

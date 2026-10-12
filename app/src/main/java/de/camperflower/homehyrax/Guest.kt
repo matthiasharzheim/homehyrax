@@ -61,8 +61,11 @@ object Guest {
         return (if (ok) "ok" else "down") to base
     }
 
-    /** Schluesseldienst abgeschaltet oder nicht erreichbar: Vollzugriff dann ohne ihn anbieten (Rueckfallebene) */
-    fun unavailable(e: Throwable) = (e as? Failure)?.code in setOf("service_off", "network", "server")
+    /**
+     * Schluesseldienst abgeschaltet: Vollzugriff dann ohne ihn anbieten (Rueckfallebene). Nur bei ausdruecklichem
+     * "service_off" - ein blosser Netzfehler (z. B. per DNS-Sperre erzwingbar) bietet keinen dauerhaften Export an.
+     */
+    fun unavailable(e: Throwable) = (e as? Failure)?.code == "service_off"
 
     /** Fehler vom Schluesseldienst (code wie in keyserver/README.md) oder "network" */
     class Failure(val code: String) : Exception(code)
@@ -218,7 +221,12 @@ object Guest {
                 if (gone) dead.putIfAbsent(old.url.lowercase(), old)
             }
             val idFor = fresh.associate { it.id to (dead[it.url.lowercase()]?.id ?: it.id) }
-            val apps = fresh.map { it.copy(id = idFor.getValue(it.id), guest = id, alwaysTunnel = it.tunnelId != null) }
+            // Shelly-/Kamera-Passwoerter mit K versiegeln: beim Gast nur bei Nutzung entschluesselt (sealedSecret),
+            // Sperren/Ablauf wirken so auch auf Schalter und Kameras im WLAN des Besitzers
+            val apps = fresh.map { a ->
+                val act = a.action?.let { if (it.pass.isEmpty()) it else it.copy(pass = SEALED + b64u(seal(key, id, it.pass.toByteArray()))) }
+                a.copy(id = idFor.getValue(a.id), guest = id, alwaysTunnel = a.tunnelId != null, action = act)
+            }
             val icons = plan.icons.filterKeys { it in idFor }.mapKeys { idFor.getValue(it.key) }
             val used = tunnels.filter { t -> apps.any { it.tunnelId == t.id } }
             val guestPlan = Share.Plan(used, apps, icons, apps.map { it.name }, emptyList(), emptyList(),
@@ -241,6 +249,26 @@ object Guest {
         val key = unb64u(r.getString("key"))
         try {
             return Tunnel(t.id, t.name, String(open(key, id, unb64u(o.getString("ct")))), TUNNEL_WG)
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    /** Kennzeichen eines mit K versiegelten Passworts (Steuerzeichen: kommt in echten Passwoertern nicht vor) */
+    private const val SEALED = "\u0001HG1:"
+
+    /**
+     * Gast-Eintrag mit versiegeltem Passwort: Schluessel holen und das Passwort nur fuer diese Nutzung (RAM)
+     * entschluesseln. Andere Eintraege kommen unveraendert zurueck. Netzwerk -> Hintergrund.
+     */
+    fun withSecrets(ctx: Context, app: WebApp): WebApp {
+        val a = app.action ?: return app
+        val inv = app.guest ?: return app
+        if (!a.pass.startsWith(SEALED)) return app
+        val r = call(ctx, "key", JSONObject(), sign = inv)
+        val key = unb64u(r.getString("key"))
+        try {
+            return app.copy(action = a.copy(pass = String(open(key, inv, unb64u(a.pass.removePrefix(SEALED))))))
         } finally {
             key.fill(0)
         }
@@ -378,7 +406,7 @@ object Guest {
     private fun allowed(url: String): Boolean {
         val u = runCatching { URL(url) }.getOrNull() ?: return false
         val h = u.host.lowercase()
-        return u.protocol == "https" && u.path.endsWith("/") && (h in ALLOWED_HOSTS || ALLOWED_HOSTS.any { h.endsWith(".$it") })
+        return u.protocol == "https" && u.path.endsWith("/") && h in ALLOWED_HOSTS   // nur exakt diese Hosts
     }
 
     // ================================================================ Echtheitspruefung (Google Play Integrity)

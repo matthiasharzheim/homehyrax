@@ -112,6 +112,8 @@ object Net {
 
     /** Laufender Gast-Tunnel: so oft beim Schluesseldienst nachfragen, ob der Zugang noch gilt */
     private const val GUEST_CHECK_MS = 60_000L
+    /** so lange ohne bestaetigte Antwort (z. B. Schluesseldienst blockiert) -> Gast-Tunnel aus */
+    private const val GUEST_GRACE_MS = 3 * 60_000L
     private val guestWatch = mutableMapOf<String, Job>()
 
     /**
@@ -122,12 +124,17 @@ object Net {
     private fun watchGuest(t: Tunnel) {
         if (guestWatch[t.id]?.isActive == true) return
         guestWatch[t.id] = scope.launch {
+            var lastOk = System.currentTimeMillis()
             try {
                 while (true) {
                     delay(GUEST_CHECK_MS)
                     if (!Wgbridge.isRunning(t.id)) break
-                    val e = runCatching { Guest.unlock(app, t) }.exceptionOrNull() as? Guest.Failure ?: continue
-                    if (e.code in setOf("blocked", "expired", "unknown", "not_bound", "bad_signature", "device", "service_off")) {
+                    val e = runCatching { Guest.unlock(app, t) }.exceptionOrNull()
+                    if (e == null) { lastOk = System.currentTimeMillis(); continue }
+                    val refused = (e as? Guest.Failure)?.code in
+                        setOf("blocked", "expired", "unknown", "not_bound", "bad_signature", "device", "service_off")
+                    // fail-closed: auch ohne klare Absage (Dienst blockiert/nicht erreichbar) nach kurzer Zeit beenden
+                    if (refused || System.currentTimeMillis() - lastOk > GUEST_GRACE_MS) {
                         runCatching { Wgbridge.stopTunnel(t.id) }
                         break
                     }
@@ -320,6 +327,20 @@ object Net {
         if (app.alwaysTunnel) return Where(false, false)   // "Immer VPN": nie direkt, auch kein Direkt-Rueckfall
         val fp = withContext(Dispatchers.IO) { wifiFingerprint() } ?: return Where(false, false)
         val known = knownHomes(app.id)
+        // Eintraege mit Passwort (Shelly, Kamera): in einem unbekannten WLAN nie direkt - ein fremdes Netz mit gleichem
+        // Standard-Adressbereich (z. B. 192.168.178.x) bekaeme sonst das Passwort; dort nur ueber den eigenen Tunnel.
+        // "Bekannt" zaehlt auch ueber Eintraege desselben Tunnels mit derselben Adresse (z. B. Webseite des Shelly):
+        // lernt die das neue Zuhause-WLAN (Router-Tausch), gilt es auch fuer den Schalter. Andere Adressen zaehlen
+        // nicht - sonst reichte ein fremder Router auf 192.168.178.1, damit der Schalter sein Passwort direkt schickt
+        val secret = app.action?.let { it.pass.isNotEmpty() || it.user.isNotEmpty() && it.gen == 0 } == true
+        if (secret && known.isNotEmpty() && fp !in known) {
+            val sameTunnel = withContext(Dispatchers.IO) {
+                runCatching { this@Net.app.store.apps() }.getOrDefault(emptyList())
+                    .filter { it.tunnelId == app.tunnelId && it.host.equals(app.host, ignoreCase = true) }
+            }
+            if (sameTunnel.none { fp in knownHomes(it.id) }) return Where(false, false)
+            return Where(reachableDirect(app), false)   // merkt das WLAN selbst, wenn das Geraet antwortet
+        }
         if (known.isNotEmpty() && fp !in known && !inCurrentSubnet(app.host)) return Where(false, true)
         return Where(reachableDirect(app), false)
     }
@@ -367,6 +388,8 @@ object Net {
             return@withContext Guest.message(app, e)
         }
         try {
+            // Gastzugang: Tunnel nur fuer die geteilten Eintraege (ausdrueckliche Routen), nie ueber AllowedIPs
+            Wgbridge.setExplicitOnly(wg.id, t.isGuest)
             Wgbridge.startTunnel(wg.id, wg.config)
         } catch (e: Exception) {
             // Gast: Go-Meldungen koennen Router-Adresse/Konfiguration enthalten

@@ -206,6 +206,19 @@ func TestTailscaleConcurrentStart(t *testing.T) {
 	}
 }
 
+// Anmelde-Links und Auth-Keys erscheinen nicht im kopierbaren Protokoll.
+func TestMaskSecrets(t *testing.T) {
+	in := "To authenticate, visit: https://login.tailscale.com/a/1a2b3c4d5e6f key tskey-auth-kAbC123-XyZ789 " +
+		"headscale https://hs.example.com/register/nodekey:abcdef0123"
+	out := maskSecrets(in)
+	if strings.Contains(out, "1a2b3c4d5e6f") || strings.Contains(out, "kAbC123") || strings.Contains(out, "abcdef0123") {
+		t.Fatalf("nicht maskiert: %s", out)
+	}
+	if !strings.Contains(out, "/a/…") || !strings.Contains(out, "tskey-…") {
+		t.Fatalf("Platzhalter fehlen: %s", out)
+	}
+}
+
 // Umleitung LAN-Adresse -> Tailscale-IP nur fuer Subnetz-Router des Ziels.
 func TestLanMapFrom(t *testing.T) {
 	a := netip.MustParseAddr
