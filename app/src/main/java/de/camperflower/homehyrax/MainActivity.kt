@@ -93,6 +93,7 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Tune
@@ -857,6 +858,8 @@ class MainActivity : FragmentActivity() {
         var desktop by rememberSaveable { mutableStateOf(base.desktop) }
         var mic by rememberSaveable { mutableStateOf(base.mic) }
         var micTouched by rememberSaveable { mutableStateOf(false) }
+        var media by rememberSaveable { mutableStateOf(base.media) }
+        var mediaTouched by rememberSaveable { mutableStateOf(false) }
         var fullscreen by rememberSaveable { mutableStateOf(base.fullscreen) }
         var advanced by rememberSaveable { mutableStateOf(false) }
         var symbol by rememberSaveable { mutableStateOf(base.symbol) }
@@ -915,7 +918,8 @@ class MainActivity : FragmentActivity() {
                 else -> normalizeUrl(url)
             }
             return base.copy(name = name.trim(), url = fullUrl, tunnelId = if (remote) tunnelId else null, alwaysTunnel = remote && always,
-                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)), fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
+                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)),
+                media = media && kind == KIND_WEB && (mediaTouched || sameOrigin(base.url, fullUrl)), fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
         }
 
         /** Prueft und speichert; null = Eingabe unvollstaendig (Hinweis wurde gezeigt). */
@@ -1215,6 +1219,7 @@ class MainActivity : FragmentActivity() {
                         IconSwitch(Icons.Filled.LightMode, stringResource(R.string.main_keep_screen_on), screenOn) { screenOn = it }
                         IconSwitch(Icons.Filled.Computer, stringResource(R.string.main_desktop_site), desktop) { desktop = it }
                         IconSwitch(Icons.Filled.Mic, stringResource(R.string.main_mic), mic) { mic = it; micTouched = true }
+                        IconSwitch(Icons.Filled.PlayCircle, stringResource(R.string.main_media), media) { media = it; mediaTouched = true }
                     }
                 }
                 if (Shortcuts.pinSupported(ctx)) {
@@ -1399,9 +1404,14 @@ class MainActivity : FragmentActivity() {
             else -> stringResource(R.string.about_keys_down)
         } + (keys?.second?.let { " · " + Uri.parse(it).host.orEmpty() } ?: "")
         val proxy = Net.proxyPort.takeIf { it > 0 }?.let { "127.0.0.1:$it" } ?: stringResource(R.string.about_proxy_off)
+        val built = remember {
+            java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+                .format(java.util.Date(BuildConfig.BUILD_TIME))
+        }
         val rows = listOf(
             stringResource(R.string.about_version) to BuildConfig.VERSION_NAME,
             stringResource(R.string.about_build) to BuildConfig.VERSION_CODE.toString(),
+            stringResource(R.string.about_built) to built,
             stringResource(R.string.about_package) to BuildConfig.APPLICATION_ID,
             stringResource(R.string.about_android) to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
             stringResource(R.string.about_device) to "${Build.MANUFACTURER} ${Build.MODEL}",
@@ -1429,6 +1439,9 @@ class MainActivity : FragmentActivity() {
                         Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                         Text(stringResource(R.string.main_info_version, BuildConfig.VERSION_NAME) + " · " + stringResource(R.string.about_build) + " ${BuildConfig.VERSION_CODE}",
                             style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.about_built_at, built),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(stringResource(R.string.about_company), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

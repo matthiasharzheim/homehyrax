@@ -15,6 +15,12 @@
     <string name="web_cert_title">Zertifikat nicht bestätigt</string>
     <string name="web_cert_message">%1$s nutzt ein eigenes (selbstsigniertes) Zertifikat – typisch für Router und NAS im Heimnetz.\n\nDiesem Gerät dauerhaft vertrauen?</string>
     <string name="web_cert_trust">Vertrauen</string>
+    <string name="media_channel">Medientasten</string>
+    <string name="media_previous">Zurück</string>
+    <string name="media_play">Abspielen</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_next">Weiter</string>
+    <string name="media_stop">Beenden</string>
     <string name="web_mic_title">Mikrofon nutzen?</string>
     <string name="web_mic_message">%1$s möchte Ton aufnehmen.\n\nFür diesen Eintrag erlauben? Abschalten unter Bearbeiten → Erweitert.</string>
     <string name="web_mic_allow">Erlauben</string>

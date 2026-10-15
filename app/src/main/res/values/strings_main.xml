@@ -90,6 +90,7 @@
     <string name="main_keep_screen_on">Keep screen on</string>
     <string name="main_desktop_site">Desktop site</string>
     <string name="main_mic">Allow microphone</string>
+    <string name="main_media">Media buttons (car, watch)</string>
     <string name="main_pinned">On home screen</string>
     <string name="main_pin">Add to home screen</string>
     <string name="main_delete_app">Delete entry</string>
@@ -265,6 +266,8 @@
     <string name="about_system">System</string>
     <string name="about_version">Version</string>
     <string name="about_build">Build</string>
+    <string name="about_built">Built</string>
+    <string name="about_built_at">Built %1$s</string>
     <string name="about_package">Package</string>
     <string name="about_android">Android</string>
     <string name="about_device">Device</string>

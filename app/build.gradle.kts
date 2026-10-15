@@ -45,6 +45,8 @@ android {
         targetSdk = 36
         versionCode = buildNumber
         versionName = "0.1.$buildNumber"
+        // Zeitpunkt des Builds fuer die Seite "Ueber HomeHyrax"
+        buildConfigField("long", "BUILD_TIME", "${System.currentTimeMillis()}L")
         // nur Handy-Prozessoren (spart ~10 MB); fuer den Emulator x86_64 ergaenzen
         // -Pabis=arm64-v8a baut eine kleinere APK nur fuer 64-Bit-Handys (Sideload)
         ndk { abiFilters += ((project.findProperty("abis") as String?)?.split(",") ?: listOf("arm64-v8a", "armeabi-v7a")) }

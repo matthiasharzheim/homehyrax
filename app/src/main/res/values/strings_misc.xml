@@ -15,6 +15,12 @@
     <string name="web_cert_title">Certificate not verified</string>
     <string name="web_cert_message">%1$s uses its own (self-signed) certificate – typical for routers and NAS at home.\n\nTrust this device permanently?</string>
     <string name="web_cert_trust">Trust</string>
+    <string name="media_channel">Media buttons</string>
+    <string name="media_previous">Previous</string>
+    <string name="media_play">Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_next">Next</string>
+    <string name="media_stop">Close</string>
     <string name="web_mic_title">Use microphone?</string>
     <string name="web_mic_message">%1$s wants to record audio.\n\nAllow for this entry? You can turn it off under Edit → Advanced.</string>
     <string name="web_mic_allow">Allow</string>

@@ -11,6 +11,12 @@
          normale Berechtigung ohne Rueckfrage -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Medien-Bruecke (Schalter "Medientasten"): Vordergrund-Dienst haelt Seite, Tunnel und Mikrofon bei
+         ausgeschaltetem Bildschirm am Leben, WakeLock fuer das Nachfragen der Seite -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -77,6 +83,11 @@
             android:taskAffinity=""
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:theme="@style/Theme.HomeHyrax.Translucent" />
+
+        <service
+            android:name=".MedienDienst"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback|microphone" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -90,6 +90,7 @@
     <string name="main_keep_screen_on">Bildschirm bleibt an</string>
     <string name="main_desktop_site">Desktop-Webseite</string>
     <string name="main_mic">Mikrofon erlauben</string>
+    <string name="main_media">Medientasten (Auto, Uhr)</string>
     <string name="main_pinned">Liegt auf dem Startbildschirm</string>
     <string name="main_pin">Auf den Startbildschirm</string>
     <string name="main_delete_app">Eintrag löschen</string>
@@ -265,6 +266,8 @@
     <string name="about_system">System</string>
     <string name="about_version">Version</string>
     <string name="about_build">Build</string>
+    <string name="about_built">Erstellt</string>
+    <string name="about_built_at">Erstellt %1$s</string>
     <string name="about_package">Paket</string>
     <string name="about_android">Android</string>
     <string name="about_device">Gerät</string>
