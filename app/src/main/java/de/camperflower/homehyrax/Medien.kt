@@ -42,6 +42,8 @@ object Medien {
     private var oeffnen: Intent? = null
     private var titel = ""
     private var interpret = ""
+    private var album = ""
+    private var bildKennung = 0
     private var spielt = false
     /** Sperrbildschirm zeigt Titel nicht (Eintrag mit Sperre) */
     private var privat = false
@@ -83,26 +85,75 @@ object Medien {
     private fun stopNow(c: Context) {
         session?.run { isActive = false; release() }
         session = null; appId = null; ziel = null; spielt = false; bild = null
+        titel = ""; interpret = ""; album = ""; bildKennung = 0
         stille?.run { runCatching { stop() }; release() }
         stille = null
         c.getSystemService(NotificationManager::class.java).cancel(ID)
     }
 
     fun metadaten(ctx: Context, t: String, i: String, a: String) {
-        titel = t.take(MAX).ifBlank { appName }; interpret = i.take(MAX)
+        val nt = t.take(MAX).ifBlank { appName }; val ni = i.take(MAX); val na = a.take(MAX)
+        // Seite meldet oft (jede Statusaenderung): Gleiches nicht erneut ans Auto/die Uhr schicken
+        if (nt == titel && ni == interpret && na == album) return
+        titel = nt; interpret = ni; album = na
+        senden(ctx)
+    }
+
+    /**
+     * Bild der Seite fuer Auto-Display/Uhr (statt des Symbols des Eintrags): nur "data:image/png|jpeg|webp;base64,…",
+     * hoechstens 512 KB und 2048 px, wird auf 512 px verkleinert. Ungueltiges wird still verworfen.
+     */
+    fun bild(ctx: Context, dataUrl: String) {
+        if (session == null || dataUrl.length > MAX_BILD_ZEICHEN) return
+        // Seite schickt dasselbe Bild oft erneut: nicht jedes Mal dekodieren und ans Auto senden
+        val kennung = dataUrl.hashCode() * 31 + dataUrl.length
+        if (kennung == bildKennung) return
+        val m = Regex("^data:image/(png|jpeg|webp);base64,").find(dataUrl) ?: return
+        // alles abgefangen (auch OutOfMemoryError): ein kaputtes Bild darf die Seite nicht beenden
+        val neu = runCatching {
+            val roh = android.util.Base64.decode(dataUrl.substring(m.range.last + 1), android.util.Base64.DEFAULT)
+            if (roh.size !in 1..MAX_BILD_BYTES) return@runCatching null
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(roh, 0, roh.size, o)
+            if (o.outWidth !in 1..MAX_BILD_PX || o.outHeight !in 1..MAX_BILD_PX) return@runCatching null
+            // gleich verkleinert dekodieren (Zweierpotenz, Ergebnis bleibt >= 512 px)
+            var probe = 1
+            while (maxOf(o.outWidth, o.outHeight) / (probe * 2) >= BILD_PX) probe *= 2
+            var bm = android.graphics.BitmapFactory.decodeByteArray(roh, 0, roh.size,
+                android.graphics.BitmapFactory.Options().apply { inSampleSize = probe }) ?: return@runCatching null
+            val gross = maxOf(bm.width, bm.height)
+            if (gross > BILD_PX) bm = Bitmap.createScaledBitmap(bm,
+                maxOf(1, bm.width * BILD_PX / gross), maxOf(1, bm.height * BILD_PX / gross), true)
+            bm
+        }.getOrNull() ?: return
+        bildKennung = kennung
+        bild = neu
+        senden(ctx)
+    }
+
+    private fun senden(ctx: Context) {
         session?.setMetadata(MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, titel)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, interpret)
-            .putString(MediaMetadata.METADATA_KEY_ALBUM, a.take(MAX))
+            .putString(MediaMetadata.METADATA_KEY_ALBUM, album)
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, titel)
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, interpret)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, -1)
-            .apply { bild?.let { putBitmap(MediaMetadata.METADATA_KEY_ART, it) } }
+            .apply {
+                bild?.let {
+                    putBitmap(MediaMetadata.METADATA_KEY_ART, it)
+                    putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
+                }
+            }
             .build())
         zeigen(ctx)
     }
 
     /** Zustand der Seite: "spielt"/"aufnahme" = laeuft, sonst angehalten. */
     fun zustand(ctx: Context, z: String) {
-        spielt = z == "spielt" || z == "aufnahme"
+        val neu = z == "spielt" || z == "aufnahme"
+        if (neu == spielt) return
+        spielt = neu
         setzen()
         zeigen(ctx)
     }
@@ -153,6 +204,11 @@ object Medien {
     private const val KANAL = "medien"
     const val ACT_STOP = "stop"
     private const val MAX = 200
+    private const val BILD_PX = 512
+    private const val MAX_BILD_PX = 2048
+    private const val MAX_BILD_BYTES = 512 * 1024
+    /** 512 KB als Base64 plus Kopf */
+    private const val MAX_BILD_ZEICHEN = 700_100
 
     private fun taste(c: Context, icon: Int, text: Int, action: String, req: Int) =
         Notification.Action.Builder(Icon.createWithResource(c, icon), c.getString(text),

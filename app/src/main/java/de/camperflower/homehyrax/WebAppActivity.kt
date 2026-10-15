@@ -461,12 +461,13 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     private fun medienNachricht(data: String?) {
         val j = runCatching { JSONObject(data.orEmpty()) }.getOrNull() ?: return
         if (!Medien.aktiv(app.id)) {
-            // starten nur aus der sichtbaren, entsperrten Seite (Vordergrund-Dienst darf nur von dort starten)
+            // Sitzung nur aus der sichtbaren, entsperrten Seite starten
             if (locked || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
             Medien.start(this, app, this)
         }
         j.optJSONArray("m")?.let { Medien.metadaten(this, it.optString(0), it.optString(1), it.optString(2)) }
         if (j.has("z")) Medien.zustand(this, j.optString("z"))
+        if (j.has("b")) Medien.bild(this, j.optString("b"))
     }
 
     /** Taste (Lenkrad, Uhr, Benachrichtigung) an die Seite - nur, solange sie noch auf dem eingetragenen Ursprung ist. */
@@ -775,7 +776,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
 
 /**
  * Medien-Bruecke in der Seite (nur Hauptseite des eingetragenen Ursprungs): window.HomeHyraxMedien.metadaten(titel,
- * interpret, album) und .zustand(z) schicken kurze JSON-Nachrichten an die App. Tasten ruft die App als
+ * interpret, album), .zustand(z) und .bild(dataUrl) schicken kurze JSON-Nachrichten an die App. Tasten ruft die App als
  * window.homeHyraxMedienAktion(name) auf (aeltere Seiten: window.fahrerMedienAktion).
  */
 private const val MEDIEN_JS =
@@ -783,7 +784,7 @@ private const val MEDIEN_JS =
     "function s(o){var k=window.HomeHyraxMedienKanal;if(k)k.postMessage(JSON.stringify(o));}" +
     "function t(x){return x==null?'':String(x);}" +
     "window.HomeHyraxMedien={metadaten:function(a,b,c){s({m:[t(a),t(b),t(c)]});}," +
-    "zustand:function(z){s({z:t(z)});}};})()"
+    "zustand:function(z){s({z:t(z)});},bild:function(u){u=t(u);if(u.length<700100)s({b:u});}};})()"
 
 /**
  * Meldet bei jeder Beruehrung, ob der Finger in einem Scrollbereich liegt, der schon nach unten gescrollt ist.
