@@ -41,6 +41,8 @@ data class WebApp(
     val requireAuth: Boolean = false,
     /** Web-App als Desktop-Webseite laden (Desktop-User-Agent, breite Ansicht) */
     val desktop: Boolean = false,
+    /** Seite darf das Mikrofon nutzen (getUserMedia), nur die eigene Adresse; gilt nur auf diesem Handy, wird nicht geteilt */
+    val mic: Boolean = false,
     /** Vollbild (Statusleiste ausgeblendet); aus = Statusleiste bleibt sichtbar */
     val fullscreen: Boolean = true,
     /** "Immer VPN": auch zuhause ueber den Tunnel, nie direkt (nur mit tunnelId). Aus = "Smart VPN". */
@@ -200,6 +202,7 @@ class Store(private val ctx: Context) {
             color = o.optInt("color", 0xFF1F242B.toInt()),
             keepScreenOn = o.optBoolean("screenOn"),
             desktop = o.optBoolean("desk"),
+            mic = o.optBoolean("mic"),
             fullscreen = o.optBoolean("full", true),
             alwaysTunnel = o.optBoolean("always"),
             trustedCert = o.optString("cert").ifEmpty { null },
@@ -273,7 +276,7 @@ class Store(private val ctx: Context) {
                 put("id", it.id); put("name", it.name); put("url", it.url)
                 put("tunnel", it.tunnelId ?: ""); put("color", it.color)
                 put("screenOn", it.keepScreenOn); put("cert", it.trustedCert ?: "")
-                put("desk", it.desktop); put("full", it.fullscreen); put("always", it.alwaysTunnel)
+                put("desk", it.desktop); put("mic", it.mic); put("full", it.fullscreen); put("always", it.alwaysTunnel)
                 put("sym", it.symbol ?: "")
                 put("kind", it.kind)
                 it.guest?.let { g -> put("guest", g) }

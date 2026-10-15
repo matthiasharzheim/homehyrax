@@ -1,6 +1,8 @@
 package de.camperflower.homehyrax
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Bitmap
@@ -14,6 +16,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.HttpAuthHandler
 import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -26,6 +29,7 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -116,6 +120,8 @@ class WebAppActivity : FragmentActivity() {
         get() = lockedState
         set(v) {
             lockedState = v
+            // offene Mikrofon-Rueckfrage nicht hinter der Sperre stehen lassen (Schliessen = ablehnen)
+            if (v) micDialog?.dismiss()
             if (::web.isInitialized) {
                 web.visibility = if (v) View.INVISIBLE else View.VISIBLE
                 if (v) web.onPause() else web.onResume()
@@ -127,6 +133,16 @@ class WebAppActivity : FragmentActivity() {
     private lateinit var pull: SwipeRefreshLayout
     /** Finger liegt in einem inneren Scrollbereich der Seite, der nicht ganz oben steht (meldet PULL_JS). */
     @Volatile private var innerScrolled = false
+
+    // Mikrofon (getUserMedia): offene Anfrage der Seite, wartet auf Rueckfrage oder Android-Berechtigung
+    private var micRequest: PermissionRequest? = null
+    private var micDialog: android.app.AlertDialog? = null
+    private val askMicPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        val r = micRequest ?: return@registerForActivityResult
+        micRequest = null
+        if (ok && micAllowed(r)) r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        else { r.deny(); if (!ok) Toast.makeText(this, getString(R.string.web_mic_no_permission), Toast.LENGTH_LONG).show() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -324,6 +340,7 @@ class WebAppActivity : FragmentActivity() {
 
     override fun onDestroy() {
         releaseTunnel()   // falls ein Verbindungsaufbau erst nach onStop fertig wurde
+        micDialog?.dismiss()   // offene Mikrofon-Anfrage ablehnen
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
     }
@@ -349,8 +366,62 @@ class WebAppActivity : FragmentActivity() {
             val chrome = Regex("Chrome/[\\d.]+").find(settings.userAgentString)?.value ?: "Chrome/130.0.0.0"
             settings.userAgentString = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $chrome Safari/537.36"
         }
-        webChromeClient = WebChromeClient()
+        webChromeClient = Chrome()
         webViewClient = Client()
+    }
+
+    /** Nur Mikrofon, nur fuer die eingetragene Adresse; Kamera, MIDI, DRM usw. bleiben abgelehnt. */
+    private inner class Chrome : WebChromeClient() {
+        override fun onPermissionRequest(request: PermissionRequest) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE !in request.resources || !micAllowed(request) ||
+                micRequest != null || isFinishing || isDestroyed) { request.deny(); return }
+            if (app.mic) { grantMic(request); return }
+            micRequest = request
+            var answered = false
+            micDialog = android.app.AlertDialog.Builder(this@WebAppActivity)
+                .setTitle(getString(R.string.web_mic_title))
+                .setMessage(getString(R.string.web_mic_message, app.host))
+                .setPositiveButton(getString(R.string.web_mic_allow)) { _, _ ->
+                    answered = true
+                    micRequest = null
+                    if (!micAllowed(request)) { request.deny(); return@setPositiveButton }
+                    // auf der aktuell gespeicherten Fassung aufsetzen (evtl. inzwischen im Editor geaendert)
+                    val cur = store.app(app.id) ?: app
+                    if (runCatching { store.saveApp(cur.copy(mic = true)) }.isSuccess) app = app.copy(mic = true)
+                    grantMic(request)
+                }
+                .setNegativeButton(getString(R.string.web_mic_deny), null)
+                // Ablehnen, Zurueck oder daneben tippen: nur diesmal ablehnen (naechstes Mal wird wieder gefragt)
+                .setOnDismissListener { micDialog = null; if (!answered && micRequest === request) { micRequest = null; request.deny() } }
+                .show()
+        }
+
+        override fun onPermissionRequestCanceled(request: PermissionRequest) {
+            if (micRequest === request) { micRequest = null; micDialog?.dismiss() }
+        }
+    }
+
+    /**
+     * Mikrofon nur fuer selbst angelegte Eintraege (keine Gast-Eintraege), nur fuer genau die eingetragene
+     * Adresse (Schema, Host, Port - nicht fuer eingebettete fremde Seiten oder weitere Geraete im Heimnetz)
+     * und nur, solange die Seite sichtbar und entsperrt ist.
+     */
+    private fun micAllowed(r: PermissionRequest): Boolean {
+        val o = r.origin ?: return false
+        val u = Uri.parse(app.url)
+        val port = { x: Uri -> if (x.port > 0) x.port else if (x.scheme.equals("https", true)) 443 else 80 }
+        return app.kind == KIND_WEB && !app.isGuest && !locked &&
+            lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            o.scheme.equals(u.scheme, ignoreCase = true) && o.host.equals(u.host, ignoreCase = true) && port(o) == port(u)
+    }
+
+    /** Android-Berechtigung ggf. erst anfragen, dann der Seite das Mikrofon geben. */
+    private fun grantMic(r: PermissionRequest) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)); return
+        }
+        micRequest = r
+        askMicPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     private inner class PullBridge {

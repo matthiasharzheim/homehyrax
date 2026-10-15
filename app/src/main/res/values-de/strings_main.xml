@@ -89,6 +89,7 @@
     <string name="main_fullscreen">Vollbild</string>
     <string name="main_keep_screen_on">Bildschirm bleibt an</string>
     <string name="main_desktop_site">Desktop-Webseite</string>
+    <string name="main_mic">Mikrofon erlauben</string>
     <string name="main_pinned">Liegt auf dem Startbildschirm</string>
     <string name="main_pin">Auf den Startbildschirm</string>
     <string name="main_delete_app">Eintrag löschen</string>

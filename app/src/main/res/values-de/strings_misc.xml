@@ -15,6 +15,11 @@
     <string name="web_cert_title">Zertifikat nicht bestätigt</string>
     <string name="web_cert_message">%1$s nutzt ein eigenes (selbstsigniertes) Zertifikat – typisch für Router und NAS im Heimnetz.\n\nDiesem Gerät dauerhaft vertrauen?</string>
     <string name="web_cert_trust">Vertrauen</string>
+    <string name="web_mic_title">Mikrofon nutzen?</string>
+    <string name="web_mic_message">%1$s möchte Ton aufnehmen.\n\nFür diesen Eintrag erlauben? Abschalten unter Bearbeiten → Erweitert.</string>
+    <string name="web_mic_allow">Erlauben</string>
+    <string name="web_mic_deny">Ablehnen</string>
+    <string name="web_mic_no_permission">Der Mikrofonzugriff ist für HomeHyrax in den Android-Einstellungen aus.</string>
     <string name="web_cert_cancelled">Verbindung abgebrochen (Zertifikat).</string>
     <string name="web_no_answer">%1$s antwortet nicht.</string>
     <string name="web_unreachable">%1$s ist nicht erreichbar.</string>

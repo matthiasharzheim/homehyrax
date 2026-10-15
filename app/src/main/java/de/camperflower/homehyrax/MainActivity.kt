@@ -92,6 +92,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Tune
@@ -854,6 +855,8 @@ class MainActivity : FragmentActivity() {
         var color by rememberSaveable { mutableIntStateOf(base.color) }
         var screenOn by rememberSaveable { mutableStateOf(base.keepScreenOn) }
         var desktop by rememberSaveable { mutableStateOf(base.desktop) }
+        var mic by rememberSaveable { mutableStateOf(base.mic) }
+        var micTouched by rememberSaveable { mutableStateOf(false) }
         var fullscreen by rememberSaveable { mutableStateOf(base.fullscreen) }
         var advanced by rememberSaveable { mutableStateOf(false) }
         var symbol by rememberSaveable { mutableStateOf(base.symbol) }
@@ -912,7 +915,7 @@ class MainActivity : FragmentActivity() {
                 else -> normalizeUrl(url)
             }
             return base.copy(name = name.trim(), url = fullUrl, tunnelId = if (remote) tunnelId else null, alwaysTunnel = remote && always,
-                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
+                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)), fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
         }
 
         /** Prueft und speichert; null = Eingabe unvollstaendig (Hinweis wurde gezeigt). */
@@ -1211,6 +1214,7 @@ class MainActivity : FragmentActivity() {
                         IconSwitch(Icons.Filled.Fullscreen, stringResource(R.string.main_fullscreen), fullscreen) { fullscreen = it }
                         IconSwitch(Icons.Filled.LightMode, stringResource(R.string.main_keep_screen_on), screenOn) { screenOn = it }
                         IconSwitch(Icons.Filled.Computer, stringResource(R.string.main_desktop_site), desktop) { desktop = it }
+                        IconSwitch(Icons.Filled.Mic, stringResource(R.string.main_mic), mic) { mic = it; micTouched = true }
                     }
                 }
                 if (Shortcuts.pinSupported(ctx)) {
@@ -2615,6 +2619,13 @@ class MainActivity : FragmentActivity() {
 
         /** Entsperren gilt so lange fuer weitere geschuetzte Seiten. */
         private const val UNLOCK_VALID_MS = 60_000L
+
+        /** Gleiches Schema, gleicher Host und Port - sonst gilt eine Mikrofon-Freigabe nicht fuer die neue Adresse. */
+        fun sameOrigin(a: String, b: String): Boolean {
+            val x = WebApp(name = "", url = a); val y = WebApp(name = "", url = b)
+            return Uri.parse(a).scheme.equals(Uri.parse(b).scheme, ignoreCase = true) &&
+                x.host.equals(y.host, ignoreCase = true) && x.port == y.port
+        }
 
         fun normalizeUrl(input: String): String {
             val s = input.trim()
