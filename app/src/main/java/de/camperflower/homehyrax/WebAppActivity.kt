@@ -144,7 +144,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     private val askMicPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         val r = micRequest ?: return@registerForActivityResult
         micRequest = null
-        if (ok && micAllowed(r)) { r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)); Medien.mikrofonNeu(this, app) }
+        if (ok && micAllowed(r)) r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
         else { r.deny(); if (!ok) Toast.makeText(this, getString(R.string.web_mic_no_permission), Toast.LENGTH_LONG).show() }
     }
 
@@ -339,8 +339,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         super.onStop()
         Net.webAppVisible(false)
         hiddenAt = android.os.SystemClock.elapsedRealtime()
-        // Medien-Bruecke laeuft (Bildschirm aus, Navi vorn): Tunnel bleibt, bis die Seite geschlossen wird
-        if (!Medien.aktiv(app.id)) releaseTunnel()
+        releaseTunnel()
     }
 
     override fun onDestroy() {
@@ -397,7 +396,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
                     // auf der aktuell gespeicherten Fassung aufsetzen (evtl. inzwischen im Editor geaendert)
                     val cur = store.app(app.id) ?: app
                     if (runCatching { store.saveApp(cur.copy(mic = true)) }.isSuccess) app = app.copy(mic = true)
-                    Medien.mikrofonNeu(this@WebAppActivity, app)
                     grantMic(request)
                 }
                 .setNegativeButton(getString(R.string.web_mic_deny), null)
@@ -420,10 +418,8 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         val o = r.origin ?: return false
         val u = Uri.parse(app.url)
         val port = { x: Uri -> if (x.port > 0) x.port else if (x.scheme.equals("https", true)) 443 else 80 }
-        // Hintergrund (Bildschirm aus, Navi vorn): nur mit laufender Medien-Bruecke und schon erteilter Freigabe
-        val sichtbar = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         return app.kind == KIND_WEB && !app.isGuest && !locked &&
-            (sichtbar || (app.mic && Medien.aktiv(app.id) && !hintergrundGesperrt())) &&
+            lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
             o.scheme.equals(u.scheme, ignoreCase = true) && o.host.equals(u.host, ignoreCase = true) && port(o) == port(u)
     }
 
@@ -483,9 +479,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
 
     override fun medienBeenden() = finishAndRemoveTask()
 
-    override fun medienGestoppt() {
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) releaseTunnel()
-    }
 
     private inner class PullBridge {
         @JavascriptInterface fun inner(scrolled: Boolean) { innerScrolled = scrolled }
