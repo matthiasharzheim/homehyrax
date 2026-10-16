@@ -16,6 +16,8 @@ import android.media.AudioTrack
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.view.KeyEvent
+import androidx.core.content.IntentCompat
 import java.lang.ref.WeakReference
 
 /**
@@ -29,8 +31,10 @@ object Medien {
 
     /** Gegenstelle in der WebAppActivity. */
     interface Ziel {
-        /** Taste an die Seite geben */
-        fun medienAktion(name: String)
+        /** Taste an die Seite geben; quelle = woher sie kam (fuer das Protokoll der Seite) */
+        fun medienAktion(name: String, quelle: String)
+        /** Diagnose an die Seite (window.homeHyraxMedienProtokoll), z. B. unbekannte Tastencodes */
+        fun medienProtokoll(text: String)
         /** "Beenden" in der Benachrichtigung: Seite schliessen */
         fun medienBeenden()
     }
@@ -64,12 +68,37 @@ object Medien {
         if (session != null) return
         session = MediaSession(c, "HomeHyraxMedien").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onPlay() = aktion("play")
-                override fun onPause() = aktion("pause")
-                override fun onStop() = aktion("pause")
-                override fun onSkipToPrevious() = aktion("previoustrack")
-                override fun onSkipToNext() = aktion("nexttrack")
-                override fun onRewind() = aktion("seekbackward")
+                // Steuerung ueber MediaController (Uhr, Benachrichtigung, manche Autos)
+                // Play/Pause immer als Umschalter nach dem echten Zustand der Seite (das Auto sieht dauerhaft "spielt")
+                override fun onPlay() = aktion(umschalten(), "play")
+                override fun onPause() = aktion(umschalten(), "pause")
+                override fun onStop() = aktion("pause", "stop")
+                override fun onSkipToPrevious() = aktion("previoustrack", "skipToPrevious")
+                override fun onSkipToNext() = aktion("nexttrack", "skipToNext")
+                override fun onFastForward() = aktion("nexttrack", "fastForward")
+                override fun onRewind() = aktion("seekbackward", "rewind")
+
+                // Tasten (Bluetooth/AVRCP, Lenkrad, Kopfhoerer) selbst auswerten: je nach Auto/Handy kommt "Weiter"
+                // auch als Vorspulen oder SKIP/STEP_FORWARD, das die Standard-Auswertung still verwirft
+                override fun onMediaButtonEvent(i: Intent): Boolean {
+                    val k = IntentCompat.getParcelableExtra(i, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                        ?: return super.onMediaButtonEvent(i)
+                    val name = when (k.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD, KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> "nexttrack"
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD,
+                        KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> "previoustrack"
+                        KeyEvent.KEYCODE_MEDIA_REWIND -> "seekbackward"
+                        KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        KeyEvent.KEYCODE_HEADSETHOOK -> umschalten()
+                        KeyEvent.KEYCODE_MEDIA_STOP -> "pause"
+                        else -> null
+                    }
+                    if (k.action != KeyEvent.ACTION_DOWN || k.repeatCount > 0) return name != null
+                    if (name == null) { protokoll("taste ${k.keyCode} unbekannt"); return super.onMediaButtonEvent(i) }
+                    aktion(name, "taste ${k.keyCode}")
+                    return true
+                }
             })
             oeffnen?.let { setSessionActivity(PendingIntent.getActivity(c, 0, it, PendingIntent.FLAG_IMMUTABLE)) }
             isActive = true
@@ -139,6 +168,9 @@ object Medien {
             .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, titel)
             .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, interpret)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, -1)
+            // "Titel 2 von 3": manche Autos aktivieren Weiter/Zurueck nur, wenn es Nachbarn gibt
+            .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 2)
+            .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, 3)
             .apply {
                 bild?.let {
                     putBitmap(MediaMetadata.METADATA_KEY_ART, it)
@@ -162,10 +194,11 @@ object Medien {
         val s = session ?: return
         s.setPlaybackState(PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
-                PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_REWIND or
+                PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_REWIND or PlaybackState.ACTION_FAST_FORWARD or
                 PlaybackState.ACTION_STOP)
-            .setState(if (spielt) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-                PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+            // immer "spielt" (es laeuft ja die stumme Wiedergabe): viele Autos bieten Weiter/Zurueck nur dann an
+            // und schicken sonst nur Play. Den echten Zustand der Seite kennt die App selbst (umschalten())
+            .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
             .build())
     }
 
@@ -194,7 +227,11 @@ object Medien {
         }.getOrNull()
     }
 
-    fun aktion(name: String) { ziel?.get()?.medienAktion(name) }
+    private fun umschalten() = if (spielt) "pause" else "play"
+
+    fun aktion(name: String, quelle: String) { ziel?.get()?.medienAktion(name, quelle) }
+
+    private fun protokoll(text: String) { ziel?.get()?.medienProtokoll(text) }
 
     fun beenden() { ziel?.get()?.medienBeenden() }
 
@@ -250,7 +287,7 @@ class MedienTasten : BroadcastReceiver() {
         when (val a = intent.action) {
             null -> Unit
             Medien.ACT_STOP -> Medien.beenden()
-            else -> Medien.aktion(a)
+            else -> Medien.aktion(a, "benachrichtigung")
         }
     }
 }

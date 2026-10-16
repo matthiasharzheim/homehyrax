@@ -482,12 +482,23 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     }
 
     /** Taste (Lenkrad, Uhr, Benachrichtigung) an die Seite - nur, solange sie noch auf dem eingetragenen Ursprung ist. */
-    override fun medienAktion(name: String) {
-        if (name !in MEDIEN_AKTIONEN || locked || hintergrundGesperrt() || !::web.isInitialized) return
-        if (medienOrigin == null || ursprung(web.url.orEmpty()) != medienOrigin) return
+    override fun medienAktion(name: String, quelle: String) {
+        if (name !in MEDIEN_AKTIONEN) return
+        if (locked || hintergrundGesperrt()) { medienProtokoll("$quelle $name verworfen: gesperrt"); return }
+        if (!seiteAufUrsprung()) return
+        medienProtokoll("$quelle $name an Seite")
         web.evaluateJavascript("(function(n){var f=window.homeHyraxMedienAktion||window.fahrerMedienAktion;" +
             "if(typeof f==='function')f(n);})('$name')", null)
     }
+
+    /** Diagnose fuer die Seite; Text stammt nur aus der App (Tastennamen, Zahlen), nie von aussen */
+    override fun medienProtokoll(text: String) {
+        if (!seiteAufUrsprung()) return
+        val t = text.filter { it.isLetterOrDigit() || it in " :()-_" }
+        web.evaluateJavascript("(function(t){var f=window.homeHyraxMedienProtokoll;if(typeof f==='function')f(t);})('$t')", null)
+    }
+
+    private fun seiteAufUrsprung() = ::web.isInitialized && medienOrigin != null && ursprung(web.url.orEmpty()) == medienOrigin
 
     override fun medienBeenden() = finishAndRemoveTask()
 
