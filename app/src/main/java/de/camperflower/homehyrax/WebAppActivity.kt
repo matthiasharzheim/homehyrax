@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.HttpAuthHandler
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -66,6 +67,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +89,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
@@ -107,6 +110,11 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     private var phase by mutableStateOf<Phase>(Phase.Connecting("..."))
     private var viaTunnel by mutableStateOf(false)
     private var showBadge by mutableStateOf(false)
+    /** zaehlt jedes "nach unten ziehen": Menue-Knopf fuer ein paar Sekunden zeigen */
+    private var menuAnstoss by mutableStateOf(0)
+    private lateinit var pull: SwipeRefreshLayout
+    /** Finger liegt in einem inneren Scrollbereich der Seite, der nicht ganz oben steht (meldet PULL_JS). */
+    @Volatile private var innerScrolled = false
 
     private lateinit var app: WebApp
     private var tunnel: Tunnel? = null
@@ -128,7 +136,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         set(v) {
             lockedState = v
             // offene Mikrofon-Rueckfrage nicht hinter der Sperre stehen lassen (Schliessen = ablehnen)
-            if (v) micDialog?.dismiss()
+            if (v) { micDialog?.dismiss(); menuAnstoss = 0 }
             if (::web.isInitialized) {
                 web.visibility = if (v) View.INVISIBLE else View.VISIBLE
                 if (v) web.onPause() else web.onResume()
@@ -167,6 +175,17 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         goFullscreen()
 
         web = createWebView()
+        // ganz oben nach unten ziehen zeigt kurz das Menue (frueher: neu laden - passierte beim Scrollen versehentlich)
+        pull = SwipeRefreshLayout(this).apply {
+            addView(web)
+            setOnRefreshListener {
+                isRefreshing = false
+                if (!locked) menuAnstoss++
+            }
+            // nicht nur die Seite selbst, auch innere Scrollbereiche (Dialoge, Seiten wie Home Assistant) zaehlen:
+            // sonst faengt das Ziehen dort das Hochscrollen ab
+            setOnChildScrollUpCallback { _, _ -> web.canScrollVertically(-1) || innerScrolled }
+        }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (web.canGoBack()) web.goBack() else finishAndRemoveTask()
@@ -354,6 +373,10 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.mediaPlaybackRequiresUserGesture = false
+        // einzige Bruecke zur Seite: ein Wahr/Falsch fuer "Nach unten ziehen" (siehe PULL_JS)
+        addJavascriptInterface(PullBridge(), "HomeHyraxPull")
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+            WebViewCompat.addDocumentStartJavaScript(this, PULL_JS, setOf("*"))
         if (app.media && !app.isGuest && app.kind == KIND_WEB) medienBruecke(this)
         if (app.desktop) {
             // Desktop-Webseite: Desktop-User-Agent (gleiche Chrome-Version), "Mobile"/Android-Kennung weg
@@ -469,11 +492,23 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     override fun medienBeenden() = finishAndRemoveTask()
 
 
+    private inner class PullBridge {
+        @JavascriptInterface fun inner(scrolled: Boolean) { innerScrolled = scrolled }
+    }
+
     private inner class Client : WebViewClient() {
+
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            // neue Seite: alter Wert aus einem Dialog der vorigen Seite gilt nicht mehr (sonst haengt die Sperre,
+            // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
+            innerScrolled = false
+        }
 
         override fun onPageFinished(view: WebView, url: String?) {
             // Desktop: mobiles Viewport-Tag ueberschreiben -> Seite wird in 1200 px Breite gelayoutet und eingepasst
             if (app.desktop) view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
+            // alte WebViews ohne Dokumentstart-Skript: nach dem Laden nachreichen (PULL_JS laeuft nur einmal)
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(PULL_JS, null)
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
@@ -653,7 +688,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     @androidx.compose.runtime.Composable
     private fun Screen() {
         Box(Modifier.fillMaxSize().background(Color(0xFF101418)).then(if (app.fullscreen) Modifier else Modifier.systemBarsPadding())) {
-            AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
+            AndroidView(factory = { pull }, modifier = Modifier.fillMaxSize())
 
             when (val p = phase) {
                 is Phase.Connecting -> Cover { Busy(p.text) }
@@ -686,13 +721,24 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         if (viaTunnel) stringResource(R.string.web_badge_away, if (tunnel?.isTailscale == true) "Tailscale" else "WireGuard")
         else stringResource(R.string.web_badge_home)
 
-    /** Menue oben rechts (statt "nach unten ziehen", das beim Scrollen versehentlich neu lud). */
+    /** Menue oben rechts: erscheint nach "nach unten ziehen" (laedt nicht mehr neu, das passierte beim Scrollen versehentlich). */
     @androidx.compose.runtime.Composable
     private fun Menu(modifier: Modifier) {
         var open by remember { mutableStateOf(false) }
+        var sichtbar by remember { mutableStateOf(false) }
+        // erscheint nach "nach unten ziehen", verschwindet nach ein paar Sekunden ohne Tipp (auch nach dem Schliessen)
+        LaunchedEffect(menuAnstoss, open) {
+            if (open || menuAnstoss == 0) return@LaunchedEffect
+            sichtbar = true
+            delay(MENU_SICHTBAR_MS)
+            sichtbar = false
+        }
         Box(modifier.statusBarsPadding().displayCutoutPadding().padding(6.dp)) {
-            IconButton(onClick = { open = true }, modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0x99202830))) {
-                Icon(Icons.Filled.MoreVert, stringResource(R.string.web_menu), tint = Color.White, modifier = Modifier.size(20.dp))
+            // waehrend des Verbindens faengt die Ladeanzeige jede Geste ab: dann Knopf immer zeigen (Einstellungen)
+            AnimatedVisibility(visible = sichtbar || open || phase is Phase.Connecting, enter = fadeIn(), exit = fadeOut()) {
+                IconButton(onClick = { open = true }, modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0x99202830))) {
+                    Icon(Icons.Filled.MoreVert, stringResource(R.string.web_menu), tint = Color.White, modifier = Modifier.size(20.dp))
+                }
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 // Verbindungsart als Info oben (wie die Plakette beim Oeffnen), erst wenn die Seite geladen ist
@@ -774,6 +820,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
 
     companion object {
         private const val RELOCK_MS = 60_000L
+        private const val MENU_SICHTBAR_MS = 4_000L
         private val MEDIEN_AKTIONEN = setOf("play", "pause", "playpause", "previoustrack", "nexttrack", "seekbackward")
 
         /** "https://host[:port]" wie die WebView den Ursprung schreibt (Standard-Port ohne Angabe), sonst null. */
@@ -799,6 +846,21 @@ private const val MEDIEN_JS =
     "function t(x){return x==null?'':String(x);}" +
     "window.HomeHyraxMedien={metadaten:function(a,b,c){s({m:[t(a),t(b),t(c)]});}," +
     "zustand:function(z){s({z:t(z)});},bild:function(u){u=t(u);if(u.length<700100)s({b:u});}};})()"
+
+/**
+ * Meldet bei jeder Beruehrung, ob der Finger in einem Scrollbereich liegt, der schon nach unten gescrollt ist.
+ * Dann ist Hochwischen Scrollen und nicht "neu laden". Laeuft ueber composedPath (auch durch Shadow DOM, z. B.
+ * Dialoge in Web Components); in einem iframe zaehlt auch dessen eigenes Dokument, das die App nicht sieht.
+ */
+private const val PULL_JS =
+    "(function(){if(window.__hhPull)return;window.__hhPull=1;" +
+    "function sc(n){var o=getComputedStyle(n).overflowY;return o==='auto'||o==='scroll'||o==='overlay';}" +
+    "document.addEventListener('touchstart',function(e){var s=false,se=document.scrollingElement," +
+    "p=e.composedPath?e.composedPath():[e.target];" +
+    "for(var i=0;i<p.length&&!s;i++){var n=p[i];if(!n||n.nodeType!==1)continue;" +
+    "if(n===se)break;if(n.scrollTop>0&&sc(n))s=true;}" +
+    "if(!s&&window!==top&&se&&se.scrollTop>0)s=true;" +
+    "try{HomeHyraxPull.inner(s);}catch(x){}},{capture:true,passive:true});})()"
 
 private const val DESKTOP_VIEWPORT_JS =
     "(function(){var m=document.querySelector('meta[name=viewport]');" +
