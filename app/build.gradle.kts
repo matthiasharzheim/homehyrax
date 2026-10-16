@@ -109,7 +109,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.webkit:webkit:1.14.0")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("androidx.biometric:biometric:1.1.0")
     // Google Play Integrity: Echtheitspruefung fuer den Gastzugang (Schluesseldienst entscheidet, ob er sie verlangt)

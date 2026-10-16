@@ -44,6 +44,8 @@
     <string name="cam_auth">Die Kamera lehnt Benutzer oder Passwort ab.</string>
     <string name="cam_mute">Ton an/aus</string>
     <string name="web_settings">Einstellungen</string>
+    <string name="web_refresh">Aktualisieren</string>
+    <string name="web_menu">Menü</string>
     <string name="act_gone">Diesen Schalter gibt es nicht mehr.</string>
     <string name="act_unlocking">Entsperren …</string>
     <string name="act_unlock_confirm">Zum Auslösen bestätigen</string>

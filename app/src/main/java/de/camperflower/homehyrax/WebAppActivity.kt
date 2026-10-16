@@ -15,7 +15,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.HttpAuthHandler
-import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -54,6 +53,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -80,7 +87,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
@@ -131,9 +137,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     private var lockError by mutableStateOf<String?>(null)
     private var startedOnce = false
     private var hiddenAt = 0L
-    private lateinit var pull: SwipeRefreshLayout
-    /** Finger liegt in einem inneren Scrollbereich der Seite, der nicht ganz oben steht (meldet PULL_JS). */
-    @Volatile private var innerScrolled = false
 
     /** Medien-Bruecke eingerichtet: Ursprung, fuer den die WebView das Objekt anbietet (sonst null) */
     private var medienOrigin: String? = null
@@ -164,17 +167,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         goFullscreen()
 
         web = createWebView()
-        // ganz oben nach unten ziehen = neu laden (wie Neustart: zuhause/unterwegs neu pruefen)
-        pull = SwipeRefreshLayout(this).apply {
-            addView(web)
-            setOnRefreshListener {
-                isRefreshing = false   // Fortschritt zeigt die Ladeanzeige (Cover)
-                if (!locked) retry()
-            }
-            // nicht nur die Seite selbst, auch innere Scrollbereiche (Dialoge, Seitenleisten) zaehlen:
-            // sonst laedt Hochwischen in einem nach unten gescrollten Dialog neu, statt zu scrollen
-            setOnChildScrollUpCallback { _, _ -> web.canScrollVertically(-1) || innerScrolled }
-        }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (web.canGoBack()) web.goBack() else finishAndRemoveTask()
@@ -362,10 +354,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.mediaPlaybackRequiresUserGesture = false
-        // einzige Bruecke zur Seite: ein Wahr/Falsch fuer "Nach unten ziehen" (siehe PULL_JS)
-        addJavascriptInterface(PullBridge(), "HomeHyraxPull")
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
-            WebViewCompat.addDocumentStartJavaScript(this, PULL_JS, setOf("*"))
         if (app.media && !app.isGuest && app.kind == KIND_WEB) medienBruecke(this)
         if (app.desktop) {
             // Desktop-Webseite: Desktop-User-Agent (gleiche Chrome-Version), "Mobile"/Android-Kennung weg
@@ -481,23 +469,11 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     override fun medienBeenden() = finishAndRemoveTask()
 
 
-    private inner class PullBridge {
-        @JavascriptInterface fun inner(scrolled: Boolean) { innerScrolled = scrolled }
-    }
-
     private inner class Client : WebViewClient() {
-
-        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-            // neue Seite: alter Wert aus einem Dialog der vorigen Seite gilt nicht mehr (sonst haengt die Sperre,
-            // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
-            innerScrolled = false
-        }
 
         override fun onPageFinished(view: WebView, url: String?) {
             // Desktop: mobiles Viewport-Tag ueberschreiben -> Seite wird in 1200 px Breite gelayoutet und eingepasst
             if (app.desktop) view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
-            // alte WebViews ohne Dokumentstart-Skript: nach dem Laden nachreichen (PULL_JS laeuft nur einmal)
-            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(PULL_JS, null)
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
@@ -677,7 +653,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     @androidx.compose.runtime.Composable
     private fun Screen() {
         Box(Modifier.fillMaxSize().background(Color(0xFF101418)).then(if (app.fullscreen) Modifier else Modifier.systemBarsPadding())) {
-            AndroidView(factory = { pull }, modifier = Modifier.fillMaxSize())
+            AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
 
             when (val p = phase) {
                 is Phase.Connecting -> Cover { Busy(p.text) }
@@ -685,6 +661,7 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
                 Phase.Ready -> {}
             }
             if (locked) Cover { Locked() }
+            else Menu(Modifier.align(Alignment.TopEnd))
 
             AnimatedVisibility(
                 visible = showBadge && phase == Phase.Ready,
@@ -697,8 +674,45 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
                 ) {
                     Icon(if (viaTunnel) Icons.Filled.Lock else Icons.Filled.Home, null, tint = Color(0xFFF2B544), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (viaTunnel) stringResource(R.string.web_badge_away, if (tunnel?.isTailscale == true) "Tailscale" else "WireGuard") else stringResource(R.string.web_badge_home), color = Color.White, fontSize = 13.sp)
+                    Text(verbindungText(), color = Color.White, fontSize = 13.sp)
                 }
+            }
+        }
+    }
+
+    /** "Zuhause · direkt" oder "Unterwegs · ueber WireGuard/Tailscale" */
+    @androidx.compose.runtime.Composable
+    private fun verbindungText(): String =
+        if (viaTunnel) stringResource(R.string.web_badge_away, if (tunnel?.isTailscale == true) "Tailscale" else "WireGuard")
+        else stringResource(R.string.web_badge_home)
+
+    /** Menue oben rechts (statt "nach unten ziehen", das beim Scrollen versehentlich neu lud). */
+    @androidx.compose.runtime.Composable
+    private fun Menu(modifier: Modifier) {
+        var open by remember { mutableStateOf(false) }
+        Box(modifier.statusBarsPadding().displayCutoutPadding().padding(6.dp)) {
+            IconButton(onClick = { open = true }, modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0x99202830))) {
+                Icon(Icons.Filled.MoreVert, stringResource(R.string.web_menu), tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                // Verbindungsart als Info oben (wie die Plakette beim Oeffnen), erst wenn die Seite geladen ist
+                if (phase == Phase.Ready) {
+                    DropdownMenuItem(text = { Text(verbindungText()) }, onClick = {}, enabled = false,
+                        leadingIcon = { Icon(if (viaTunnel) Icons.Filled.Lock else Icons.Filled.Home, null, tint = Color(0xFFF2B544)) })
+                    HorizontalDivider()
+                }
+                // nicht waehrend des Verbindens: sonst liefen zwei start() gleichzeitig
+                DropdownMenuItem(text = { Text(stringResource(R.string.web_refresh)) },
+                    leadingIcon = { Icon(Icons.Filled.Refresh, null) },
+                    enabled = phase !is Phase.Connecting,
+                    onClick = { open = false; retry() })
+                // Gast-Eintraege lassen sich nicht bearbeiten
+                if (!app.isGuest) DropdownMenuItem(text = { Text(stringResource(R.string.web_settings)) },
+                    leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                    onClick = {
+                        open = false
+                        startActivity(Intent(this@WebAppActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_EDIT, app.id))
+                    })
             }
         }
     }
@@ -785,21 +799,6 @@ private const val MEDIEN_JS =
     "function t(x){return x==null?'':String(x);}" +
     "window.HomeHyraxMedien={metadaten:function(a,b,c){s({m:[t(a),t(b),t(c)]});}," +
     "zustand:function(z){s({z:t(z)});},bild:function(u){u=t(u);if(u.length<700100)s({b:u});}};})()"
-
-/**
- * Meldet bei jeder Beruehrung, ob der Finger in einem Scrollbereich liegt, der schon nach unten gescrollt ist.
- * Dann ist Hochwischen Scrollen und nicht "neu laden". Laeuft ueber composedPath (auch durch Shadow DOM, z. B.
- * Dialoge in Web Components); in einem iframe zaehlt auch dessen eigenes Dokument, das die App nicht sieht.
- */
-private const val PULL_JS =
-    "(function(){if(window.__hhPull)return;window.__hhPull=1;" +
-    "function sc(n){var o=getComputedStyle(n).overflowY;return o==='auto'||o==='scroll'||o==='overlay';}" +
-    "document.addEventListener('touchstart',function(e){var s=false,se=document.scrollingElement," +
-    "p=e.composedPath?e.composedPath():[e.target];" +
-    "for(var i=0;i<p.length&&!s;i++){var n=p[i];if(!n||n.nodeType!==1)continue;" +
-    "if(n===se)break;if(n.scrollTop>0&&sc(n))s=true;}" +
-    "if(!s&&window!==top&&se&&se.scrollTop>0)s=true;" +
-    "try{HomeHyraxPull.inner(s);}catch(x){}},{capture:true,passive:true});})()"
 
 private const val DESKTOP_VIEWPORT_JS =
     "(function(){var m=document.querySelector('meta[name=viewport]');" +
