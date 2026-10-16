@@ -45,6 +45,11 @@
     <string name="cam_mute">Ton an/aus</string>
     <string name="web_settings">Einstellungen</string>
     <string name="web_refresh">Aktualisieren</string>
+    <string name="web_media_on">Medientasten aktiv</string>
+    <string name="web_media_wait">Medientasten: Seite nicht verbunden</string>
+    <string name="web_media_none">Medientasten: nicht verfügbar</string>
+    <string name="web_media_last">Letzte Taste: %1$s</string>
+    <string name="web_media_nokey">Noch keine Taste angekommen</string>
     <string name="web_menu">Menü</string>
     <string name="act_gone">Diesen Schalter gibt es nicht mehr.</string>
     <string name="act_unlocking">Entsperren …</string>

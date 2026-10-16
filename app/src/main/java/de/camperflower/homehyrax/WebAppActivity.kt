@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -756,6 +757,18 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
                 if (phase == Phase.Ready) {
                     DropdownMenuItem(text = { Text(verbindungText()) }, onClick = {}, enabled = false,
                         leadingIcon = { Icon(if (viaTunnel) Icons.Filled.Lock else Icons.Filled.Home, null, tint = Color(0xFFF2B544)) })
+                    // Medientasten: laeuft die Bruecke, und welche Taste kam zuletzt an (Diagnose im Auto)
+                    if (app.media && !app.isGuest) {
+                        val zustand = when {
+                            medienOrigin == null -> stringResource(R.string.web_media_none)
+                            Medien.aktiv(app.id) -> stringResource(R.string.web_media_on)
+                            else -> stringResource(R.string.web_media_wait)
+                        }
+                        val taste = Medien.letzteTaste(app.id)?.let { stringResource(R.string.web_media_last, it) }
+                            ?: stringResource(R.string.web_media_nokey)
+                        DropdownMenuItem(text = { Column { Text(zustand); Text(taste, fontSize = 12.sp) } }, onClick = {}, enabled = false,
+                            leadingIcon = { Icon(Icons.Filled.PlayCircle, null) })
+                    }
                     HorizontalDivider()
                 }
                 // nicht waehrend des Verbindens: sonst liefen zwei start() gleichzeitig

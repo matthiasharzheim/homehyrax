@@ -49,6 +49,12 @@ object Medien {
     private var album = ""
     private var bildKennung = 0
     private var spielt = false
+    /** Diagnose fuers Menue: letzte angekommene Taste ("taste 87 nexttrack 13:31") */
+    @Volatile private var letzteTaste: String? = null
+    @Volatile private var letzteTasteFuer: String? = null
+
+    /** letzte Taste nur fuer genau diesen Eintrag (nicht die eines vorher offenen anderen) */
+    fun letzteTaste(id: String) = letzteTaste.takeIf { letzteTasteFuer == id }
     /** Sperrbildschirm zeigt Titel nicht (Eintrag mit Sperre) */
     private var privat = false
     /** Bild fuer Auto-Display/Uhr: Symbol des Eintrags (eigenes Bild oder Logo) */
@@ -168,9 +174,6 @@ object Medien {
             .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, titel)
             .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, interpret)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, -1)
-            // "Titel 2 von 3": manche Autos aktivieren Weiter/Zurueck nur, wenn es Nachbarn gibt
-            .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 2)
-            .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, 3)
             .apply {
                 bild?.let {
                     putBitmap(MediaMetadata.METADATA_KEY_ART, it)
@@ -229,9 +232,17 @@ object Medien {
 
     private fun umschalten() = if (spielt) "pause" else "play"
 
-    fun aktion(name: String, quelle: String) { ziel?.get()?.medienAktion(name, quelle) }
+    fun aktion(name: String, quelle: String) {
+        letzteTaste = "$quelle $name " + uhrzeit(); letzteTasteFuer = appId
+        ziel?.get()?.medienAktion(name, quelle)
+    }
 
-    private fun protokoll(text: String) { ziel?.get()?.medienProtokoll(text) }
+    private fun uhrzeit() = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT).format(java.util.Date())
+
+    private fun protokoll(text: String) {
+        letzteTaste = text + " " + uhrzeit(); letzteTasteFuer = appId
+        ziel?.get()?.medienProtokoll(text)
+    }
 
     fun beenden() { ziel?.get()?.medienBeenden() }
 
