@@ -93,7 +93,6 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Tune
@@ -858,8 +857,6 @@ class MainActivity : FragmentActivity() {
         var desktop by rememberSaveable { mutableStateOf(base.desktop) }
         var mic by rememberSaveable { mutableStateOf(base.mic) }
         var micTouched by rememberSaveable { mutableStateOf(false) }
-        var media by rememberSaveable { mutableStateOf(base.media) }
-        var mediaTouched by rememberSaveable { mutableStateOf(false) }
         var fullscreen by rememberSaveable { mutableStateOf(base.fullscreen) }
         var advanced by rememberSaveable { mutableStateOf(false) }
         var symbol by rememberSaveable { mutableStateOf(base.symbol) }
@@ -918,8 +915,7 @@ class MainActivity : FragmentActivity() {
                 else -> normalizeUrl(url)
             }
             return base.copy(name = name.trim(), url = fullUrl, tunnelId = if (remote) tunnelId else null, alwaysTunnel = remote && always,
-                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)),
-                media = media && kind == KIND_WEB && (mediaTouched || sameOrigin(base.url, fullUrl)), fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
+                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)), fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
         }
 
         /** Prueft und speichert; null = Eingabe unvollstaendig (Hinweis wurde gezeigt). */
@@ -1219,7 +1215,6 @@ class MainActivity : FragmentActivity() {
                         IconSwitch(Icons.Filled.LightMode, stringResource(R.string.main_keep_screen_on), screenOn) { screenOn = it }
                         IconSwitch(Icons.Filled.Computer, stringResource(R.string.main_desktop_site), desktop) { desktop = it }
                         IconSwitch(Icons.Filled.Mic, stringResource(R.string.main_mic), mic) { mic = it; micTouched = true }
-                        IconSwitch(Icons.Filled.PlayCircle, stringResource(R.string.main_media), media) { media = it; mediaTouched = true }
                     }
                 }
                 if (Shortcuts.pinSupported(ctx)) {

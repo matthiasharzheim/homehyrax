@@ -90,7 +90,6 @@
     <string name="main_keep_screen_on">Keep screen on</string>
     <string name="main_desktop_site">Desktop site</string>
     <string name="main_mic">Allow microphone</string>
-    <string name="main_media">Media buttons (car, watch)</string>
     <string name="main_pinned">On home screen</string>
     <string name="main_pin">Add to home screen</string>
     <string name="main_delete_app">Delete entry</string>

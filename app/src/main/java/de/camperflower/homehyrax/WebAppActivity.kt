@@ -55,7 +55,6 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -94,13 +93,12 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
-import org.json.JSONObject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
 
 /** Zeigt eine Web-App im Vollbild; entscheidet zuhause/unterwegs. */
-class WebAppActivity : FragmentActivity(), Medien.Ziel {
+class WebAppActivity : FragmentActivity() {
 
     private sealed interface Phase {
         data class Connecting(val text: String) : Phase
@@ -146,9 +144,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     private var lockError by mutableStateOf<String?>(null)
     private var startedOnce = false
     private var hiddenAt = 0L
-
-    /** Medien-Bruecke eingerichtet: Ursprung, fuer den die WebView das Objekt anbietet (sonst null) */
-    private var medienOrigin: String? = null
 
     // Mikrofon (getUserMedia): offene Anfrage der Seite, wartet auf Rueckfrage oder Android-Berechtigung
     private var micRequest: PermissionRequest? = null
@@ -355,7 +350,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     }
 
     override fun onDestroy() {
-        if (::app.isInitialized) Medien.stop(this, app.id)
         releaseTunnel()   // falls ein Verbindungsaufbau erst nach onStop fertig wurde
         micDialog?.dismiss()   // offene Mikrofon-Anfrage ablehnen
         if (::web.isInitialized) web.destroy()
@@ -378,7 +372,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         addJavascriptInterface(PullBridge(), "HomeHyraxPull")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
             WebViewCompat.addDocumentStartJavaScript(this, PULL_JS, setOf("*"))
-        if (app.media && !app.isGuest && app.kind == KIND_WEB) medienBruecke(this)
         if (app.desktop) {
             // Desktop-Webseite: Desktop-User-Agent (gleiche Chrome-Version), "Mobile"/Android-Kennung weg
             val chrome = Regex("Chrome/[\\d.]+").find(settings.userAgentString)?.value ?: "Chrome/130.0.0.0"
@@ -394,8 +387,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
             if (PermissionRequest.RESOURCE_AUDIO_CAPTURE !in request.resources || !micAllowed(request) ||
                 micRequest != null || isFinishing || isDestroyed) { request.deny(); return }
             if (app.mic) { grantMic(request); return }
-            // Rueckfrage nur auf der sichtbaren Seite (im Hintergrund nur mit schon erteilter Freigabe)
-            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) { request.deny(); return }
             micRequest = request
             var answered = false
             micDialog = android.app.AlertDialog.Builder(this@WebAppActivity)
@@ -440,69 +431,9 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)); return
         }
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) { r.deny(); return }
         micRequest = r
         askMicPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
-
-    /**
-     * Medien-Bruecke (Schalter "Medientasten"): window.HomeHyraxMedien.metadaten()/zustand() nur fuer den Ursprung der
-     * eingetragenen Adresse - die WebView bietet Kanal und Skript fremden Seiten/iframes gar nicht erst an.
-     */
-    private fun medienBruecke(w: WebView) {
-        val o = ursprung(app.url) ?: return
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
-            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            try {
-                WebViewCompat.addWebMessageListener(w, "HomeHyraxMedienKanal", setOf(o)) { _, msg, source, isMain, _ ->
-                    if (isMain && ursprung(source.toString()) == o) medienNachricht(msg.data)
-                }
-                WebViewCompat.addDocumentStartJavaScript(w, MEDIEN_JS, setOf(o))
-                medienOrigin = o
-            } catch (_: IllegalArgumentException) {
-                // Ursprungsregel abgelehnt: ohne Bruecke weiter
-            }
-        }
-    }
-
-    /** Eintrag mit Sperre: nach > 60 s im Hintergrund keine Tasten/Aufnahme mehr, bis wieder entsperrt. */
-    private fun hintergrundGesperrt() = app.requireAuth && hiddenAt > 0 &&
-        !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
-        android.os.SystemClock.elapsedRealtime() - hiddenAt > RELOCK_MS
-
-    private fun medienNachricht(data: String?) {
-        val j = runCatching { JSONObject(data.orEmpty()) }.getOrNull() ?: return
-        if (!Medien.aktiv(app.id)) {
-            // Sitzung nur aus der sichtbaren, entsperrten Seite starten
-            if (locked || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
-            Medien.start(this, app, this)
-        }
-        j.optJSONArray("m")?.let { Medien.metadaten(this, it.optString(0), it.optString(1), it.optString(2)) }
-        if (j.has("z")) Medien.zustand(this, j.optString("z"))
-        if (j.has("b")) Medien.bild(this, j.optString("b"))
-    }
-
-    /** Taste (Lenkrad, Uhr, Benachrichtigung) an die Seite - nur, solange sie noch auf dem eingetragenen Ursprung ist. */
-    override fun medienAktion(name: String, quelle: String) {
-        if (name !in MEDIEN_AKTIONEN) return
-        if (locked || hintergrundGesperrt()) { medienProtokoll("$quelle $name verworfen: gesperrt"); return }
-        if (!seiteAufUrsprung()) return
-        medienProtokoll("$quelle $name an Seite")
-        web.evaluateJavascript("(function(n){var f=window.homeHyraxMedienAktion||window.fahrerMedienAktion;" +
-            "if(typeof f==='function')f(n);})('$name')", null)
-    }
-
-    /** Diagnose fuer die Seite; Text stammt nur aus der App (Tastennamen, Zahlen), nie von aussen */
-    override fun medienProtokoll(text: String) {
-        if (!seiteAufUrsprung()) return
-        val t = text.filter { it.isLetterOrDigit() || it in " :()-_" }
-        web.evaluateJavascript("(function(t){var f=window.homeHyraxMedienProtokoll;if(typeof f==='function')f(t);})('$t')", null)
-    }
-
-    private fun seiteAufUrsprung() = ::web.isInitialized && medienOrigin != null && ursprung(web.url.orEmpty()) == medienOrigin
-
-    override fun medienBeenden() = finishAndRemoveTask()
-
 
     private inner class PullBridge {
         @JavascriptInterface fun inner(scrolled: Boolean) { innerScrolled = scrolled }
@@ -757,18 +688,6 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
                 if (phase == Phase.Ready) {
                     DropdownMenuItem(text = { Text(verbindungText()) }, onClick = {}, enabled = false,
                         leadingIcon = { Icon(if (viaTunnel) Icons.Filled.Lock else Icons.Filled.Home, null, tint = Color(0xFFF2B544)) })
-                    // Medientasten: laeuft die Bruecke, und welche Taste kam zuletzt an (Diagnose im Auto)
-                    if (app.media && !app.isGuest) {
-                        val zustand = when {
-                            medienOrigin == null -> stringResource(R.string.web_media_none)
-                            Medien.aktiv(app.id) -> stringResource(R.string.web_media_on)
-                            else -> stringResource(R.string.web_media_wait)
-                        }
-                        val taste = Medien.letzteTaste(app.id)?.let { stringResource(R.string.web_media_last, it) }
-                            ?: stringResource(R.string.web_media_nokey)
-                        DropdownMenuItem(text = { Column { Text(zustand); Text(taste, fontSize = 12.sp) } }, onClick = {}, enabled = false,
-                            leadingIcon = { Icon(Icons.Filled.PlayCircle, null) })
-                    }
                     HorizontalDivider()
                 }
                 // nicht waehrend des Verbindens: sonst liefen zwei start() gleichzeitig
@@ -845,31 +764,8 @@ class WebAppActivity : FragmentActivity(), Medien.Ziel {
     companion object {
         private const val RELOCK_MS = 60_000L
         private const val MENU_SICHTBAR_MS = 4_000L
-        private val MEDIEN_AKTIONEN = setOf("play", "pause", "playpause", "previoustrack", "nexttrack", "seekbackward")
-
-        /** "https://host[:port]" wie die WebView den Ursprung schreibt (Standard-Port ohne Angabe), sonst null. */
-        fun ursprung(url: String): String? {
-            val u = Uri.parse(url)
-            val s = u.scheme?.lowercase()?.takeIf { it == "https" || it == "http" } ?: return null
-            val h = u.host?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
-            val host = if (':' in h && !h.startsWith("[")) "[$h]" else h
-            val p = u.port
-            return if (p <= 0 || (s == "https" && p == 443) || (s == "http" && p == 80)) "$s://$host" else "$s://$host:$p"
-        }
     }
 }
-
-/**
- * Medien-Bruecke in der Seite (nur Hauptseite des eingetragenen Ursprungs): window.HomeHyraxMedien.metadaten(titel,
- * interpret, album), .zustand(z) und .bild(dataUrl) schicken kurze JSON-Nachrichten an die App. Tasten ruft die App als
- * window.homeHyraxMedienAktion(name) auf (aeltere Seiten: window.fahrerMedienAktion).
- */
-private const val MEDIEN_JS =
-    "(function(){if(window.top!==window||window.HomeHyraxMedien)return;" +
-    "function s(o){var k=window.HomeHyraxMedienKanal;if(k)k.postMessage(JSON.stringify(o));}" +
-    "function t(x){return x==null?'':String(x);}" +
-    "window.HomeHyraxMedien={metadaten:function(a,b,c){s({m:[t(a),t(b),t(c)]});}," +
-    "zustand:function(z){s({z:t(z)});},bild:function(u){u=t(u);if(u.length<700100)s({b:u});}};})()"
 
 /**
  * Meldet bei jeder Beruehrung, ob der Finger in einem Scrollbereich liegt, der schon nach unten gescrollt ist.

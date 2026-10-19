@@ -15,12 +15,6 @@
     <string name="web_cert_title">Zertifikat nicht bestätigt</string>
     <string name="web_cert_message">%1$s nutzt ein eigenes (selbstsigniertes) Zertifikat – typisch für Router und NAS im Heimnetz.\n\nDiesem Gerät dauerhaft vertrauen?</string>
     <string name="web_cert_trust">Vertrauen</string>
-    <string name="media_channel">Medientasten</string>
-    <string name="media_previous">Zurück</string>
-    <string name="media_play">Abspielen</string>
-    <string name="media_pause">Pause</string>
-    <string name="media_next">Weiter</string>
-    <string name="media_stop">Beenden</string>
     <string name="web_mic_title">Mikrofon nutzen?</string>
     <string name="web_mic_message">%1$s möchte Ton aufnehmen.\n\nFür diesen Eintrag erlauben? Abschalten unter Bearbeiten → Erweitert.</string>
     <string name="web_mic_allow">Erlauben</string>
@@ -45,11 +39,6 @@
     <string name="cam_mute">Ton an/aus</string>
     <string name="web_settings">Einstellungen</string>
     <string name="web_refresh">Aktualisieren</string>
-    <string name="web_media_on">Medientasten aktiv</string>
-    <string name="web_media_wait">Medientasten: Seite nicht verbunden</string>
-    <string name="web_media_none">Medientasten: nicht verfügbar</string>
-    <string name="web_media_last">Letzte Taste: %1$s</string>
-    <string name="web_media_nokey">Noch keine Taste angekommen</string>
     <string name="web_menu">Menü</string>
     <string name="act_gone">Diesen Schalter gibt es nicht mehr.</string>
     <string name="act_unlocking">Entsperren …</string>

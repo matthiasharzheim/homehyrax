@@ -78,11 +78,6 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:theme="@style/Theme.HomeHyrax.Translucent" />
 
-        <!-- Tasten der Medien-Benachrichtigung (Medien-Bruecke) -->
-        <receiver
-            android:name=".MedienTasten"
-            android:exported="false" />
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
