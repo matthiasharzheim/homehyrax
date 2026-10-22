@@ -4,6 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.app.ActivityManager
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -11,6 +13,7 @@ import android.net.http.SslCertificate
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -18,6 +21,7 @@ import android.webkit.HttpAuthHandler
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -93,8 +97,10 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 
 /** Zeigt eine Web-App im Vollbild; entscheidet zuhause/unterwegs. */
@@ -153,6 +159,55 @@ class WebAppActivity : FragmentActivity() {
         micRequest = null
         if (ok && micAllowed(r)) r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
         else { r.deny(); if (!ok) Toast.makeText(this, getString(R.string.web_mic_no_permission), Toast.LENGTH_LONG).show() }
+    }
+
+    // Dateiauswahl (<input type=file>): offene Anfrage der Seite, Foto-Ziel der Kamera
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private var photoFile: java.io.File? = null
+    private var photoGrant: Uri? = null
+    /** laeuft gerade ein Download (Seite kann per Skript viele anstossen) */
+    private var downloading = false
+    private var chooserIntent: Intent? = null
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val cb = fileCallback ?: return@registerForActivityResult
+        fileCallback = null
+        val data = res.data
+        photoGrant?.let { revokeUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        photoGrant = null
+        // inzwischen wieder gesperrt (Auswahl dauerte > 1 min): nichts an die verdeckte Seite geben
+        val picked = if (res.resultCode != RESULT_OK || locked) null else buildList<Uri> {
+            data?.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i).uri?.let { add(it) } }
+            if (isEmpty()) data?.data?.let { add(it) }
+            // Kamera liefert kein Ergebnis-Intent, nur die Datei an EXTRA_OUTPUT
+            if (isEmpty()) photoFile?.takeIf { it.length() > 0 }?.let { add(WebFiles.uriFor(this@WebAppActivity, it)) }
+        }.takeIf { it.isNotEmpty() }
+        photoFile?.takeIf { picked == null || it.length() == 0L }?.delete()
+        photoFile = null
+        cb.onReceiveValue(picked?.toTypedArray())   // null = abgebrochen (Seite darf danach erneut fragen)
+    }
+    /** Kamera-Berechtigung (schon fuer den QR-Scanner deklariert) nur, wenn die Seite ausdruecklich ein Foto will */
+    private val askCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        val i = chooserIntent ?: return@registerForActivityResult
+        chooserIntent = null
+        launchChooser(i, withCamera = ok)
+    }
+    /** "Speichern unter" fuer geladene Dateien, wenn keine App sie oeffnen kann */
+    private var saveSource: WebFiles.Loaded? = null
+    private val saveAs = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val src = saveSource ?: return@registerForActivityResult
+        saveSource = null
+        val target = res.data?.data
+        if (res.resultCode != RESULT_OK || target == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openOutputStream(target)!!.use { out -> src.file.inputStream().use { it.copyTo(out) } }
+                }.isSuccess
+            }
+            Toast.makeText(this@WebAppActivity,
+                if (ok) getString(R.string.web_file_saved, src.file.name) else getString(R.string.web_file_save_failed, src.file.name),
+                Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -352,6 +407,7 @@ class WebAppActivity : FragmentActivity() {
     override fun onDestroy() {
         releaseTunnel()   // falls ein Verbindungsaufbau erst nach onStop fertig wurde
         micDialog?.dismiss()   // offene Mikrofon-Anfrage ablehnen
+        fileCallback?.onReceiveValue(null); fileCallback = null
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
     }
@@ -379,6 +435,7 @@ class WebAppActivity : FragmentActivity() {
         }
         webChromeClient = Chrome()
         webViewClient = Client()
+        setDownloadListener { url, ua, disposition, mime, _ -> download(url, ua, disposition, mime) }
     }
 
     /** Nur Mikrofon, nur fuer die eingetragene Adresse; Kamera, MIDI, DRM usw. bleiben abgelehnt. */
@@ -409,6 +466,112 @@ class WebAppActivity : FragmentActivity() {
 
         override fun onPermissionRequestCanceled(request: PermissionRequest) {
             if (micRequest === request) { micRequest = null; micDialog?.dismiss() }
+        }
+
+        /** <input type=file>: Android-Auswahl (Dateien, Galerie, ggf. Kamera) - ohne Speicher-Berechtigung */
+        override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+            fileCallback?.onReceiveValue(null)   // vorige, nie beantwortete Anfrage beenden
+            fileCallback = null
+            if (locked || isFinishing || isDestroyed) return false   // false = WebView meldet "abgebrochen"
+            fileCallback = callback
+            val types = WebFiles.acceptTypes(params.acceptTypes)
+            val pick = Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(types.singleOrNull() ?: "*/*")
+                .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+            if (types.size > 1) pick.putExtra(Intent.EXTRA_MIME_TYPES, types.toTypedArray())
+            val images = types.isEmpty() || types.any { it.startsWith("image/") }
+            val hasCamera = packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+            when {
+                !images || !hasCamera -> launchChooser(pick, withCamera = false)
+                checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED -> launchChooser(pick, withCamera = true)
+                // nur auf ausdruecklichen Wunsch der Seite (capture) nach der Kamera fragen, sonst ohne Kamera
+                params.isCaptureEnabled -> { chooserIntent = pick; askCamera.launch(Manifest.permission.CAMERA) }
+                else -> launchChooser(pick, withCamera = false)
+            }
+            return true
+        }
+    }
+
+    private fun launchChooser(pick: Intent, withCamera: Boolean) {
+        if (fileCallback == null) return   // inzwischen abgebrochen (z. B. gesperrt)
+        val extra: Array<Intent> = if (!withCamera) emptyArray() else runCatching {
+            val f = java.io.File(WebFiles.dir(this, "upload"), "IMG_${System.currentTimeMillis()}.jpg")
+            val uri = WebFiles.uriFor(this, f)
+            val cam = Intent(MediaStore.ACTION_IMAGE_CAPTURE).putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            cam.clipData = ClipData.newRawUri("", uri)
+            // im Auswahl-Dialog gibt Android die Freigabe nicht immer weiter -> den Kamera-Apps direkt erteilen
+            packageManager.queryIntentActivities(cam, PackageManager.MATCH_DEFAULT_ONLY).forEach {
+                grantUriPermission(it.activityInfo.packageName, uri,
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            photoFile = f
+            photoGrant = uri
+            arrayOf(cam)
+        }.getOrDefault(emptyArray())
+        val chooser = Intent.createChooser(pick, getString(R.string.web_file_choose))
+        if (extra.isNotEmpty()) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extra)
+        try { pickFiles.launch(chooser) }
+        catch (_: ActivityNotFoundException) {
+            fileCallback?.onReceiveValue(null); fileCallback = null; photoFile = null
+            Toast.makeText(this, getString(R.string.web_file_no_picker), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Download/Anhang (z. B. PDF, das die WebView nicht anzeigen kann): ueber den eigenen Proxy laden - ein fremder
+     * Betrachter erreicht das Heimnetz nicht - und dann mit der passenden App oeffnen. Adressen ausserhalb des
+     * Heimnetzes oeffnet der normale Browser (Gast-Eintraege: nur die eigene Adresse wird geladen).
+     */
+    private fun download(url: String, userAgent: String?, disposition: String?, mime: String?) {
+        if (locked) return
+        val u = Uri.parse(url)
+        val scheme = u.scheme?.lowercase()
+        if (scheme == "blob") { Toast.makeText(this, getString(R.string.web_file_blob), Toast.LENGTH_LONG).show(); return }
+        // Gast-Eintrag: nur die eigene Adresse; sonst auch andere Geraete im Heimnetz (wie beim Navigieren)
+        val allowed = { h: String? -> h.equals(app.host, ignoreCase = true) || (!app.isGuest && Hosts.isPrivate(h)) }
+        // Adressen im Internet: Links dorthin oeffnet schon shouldOverrideUrlLoading nach Tipp im Browser;
+        // hier kommen nur noch Downloads per Skript/iframe an - die starten keine andere App
+        if (scheme != "data" && !(scheme in listOf("http", "https") && allowed(u.host))) return
+        if (downloading) return
+        downloading = true
+        Toast.makeText(this, getString(R.string.web_file_loading), Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val r = try {
+                Result.success(WebFiles.fetch(this@WebAppActivity, url, userAgent, disposition, mime, certPins()) { allowed(it) })
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e   // Activity zu: keine Meldung
+            } catch (e: Exception) {
+                Result.failure(e)
+            } finally {
+                downloading = false
+            }
+            val loaded = r.getOrElse { e ->
+                val why = when (e) {
+                    is WebFiles.TooLarge -> getString(R.string.web_file_too_large, (WebFiles.MAX_BYTES / (1024 * 1024)).toInt())
+                    is WebFiles.HttpStatus -> "HTTP ${e.code}"
+                    is WebFiles.GotPage -> getString(R.string.web_file_got_page)
+                    is WebFiles.Blocked -> getString(R.string.web_file_blocked)
+                    else -> e.message ?: e.javaClass.simpleName
+                }
+                Toast.makeText(this@WebAppActivity, getString(R.string.web_file_failed, why), Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (isFinishing || isDestroyed || locked) return@launch
+            openFile(loaded)
+        }
+    }
+
+    private fun openFile(f: WebFiles.Loaded) {
+        val uri = WebFiles.uriFor(this, f.file)
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, f.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try { startActivity(view) }
+        catch (_: ActivityNotFoundException) {
+            // keine App fuer diesen Typ: im Handy speichern (Android-Dialog, ohne Speicher-Berechtigung)
+            saveSource = f
+            val save = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(f.mime).putExtra(Intent.EXTRA_TITLE, f.file.name)
+            runCatching { saveAs.launch(save) }.onFailure { saveSource = null }
         }
     }
 

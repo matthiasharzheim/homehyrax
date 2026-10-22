@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Nur der Teilen-Ordner im Cache wird freigegeben -->
+<!-- Nur diese Cache-Ordner werden freigegeben: Teilen-Export, aus einer Web-App geladene Dateien
+     (fuer den Betrachter) und Kamerafotos fuers Hochladen -->
 <paths>
     <cache-path name="share" path="share/" />
+    <cache-path name="files" path="files/" />
+    <cache-path name="upload" path="upload/" />
 </paths>

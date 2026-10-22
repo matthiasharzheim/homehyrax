@@ -13,6 +13,13 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Dateiauswahl einer Webseite: Kamera-Apps sehen, um ihnen die Foto-Datei freizugeben (keine Berechtigung) -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".HomeHyraxApp"
         android:allowBackup="false"

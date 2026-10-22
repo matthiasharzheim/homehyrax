@@ -120,4 +120,14 @@
     <string name="guest_err_no_reply">Keine Antwort vom Heimnetz.</string>
     <string name="guest_err_service_off">Der Schlüsseldienst wurde abgeschaltet. Bitte den Besitzer um Vollzugriff.</string>
     <string name="guest_err_integrity">Gastzugang auf diesem Handy nicht möglich (App nicht aus Google Play oder Gerät nicht zugelassen).</string>
+    <string name="web_file_choose">Datei wählen</string>
+    <string name="web_file_no_picker">Keine App zur Dateiauswahl gefunden.</string>
+    <string name="web_file_loading">Datei wird geladen …</string>
+    <string name="web_file_failed">Datei konnte nicht geladen werden: %1$s</string>
+    <string name="web_file_too_large">größer als %1$d MB</string>
+    <string name="web_file_saved">Gespeichert: %1$s</string>
+    <string name="web_file_save_failed">%1$s konnte nicht gespeichert werden.</string>
+    <string name="web_file_blob">Diese Seite erzeugt die Datei selbst – das kann HomeHyrax noch nicht öffnen.</string>
+    <string name="web_file_got_page">die Seite lieferte statt der Datei eine Webseite – bitte neu anmelden</string>
+    <string name="web_file_blocked">Weiterleitung an eine Adresse, die dieser Eintrag nicht öffnen darf</string>
 </resources>

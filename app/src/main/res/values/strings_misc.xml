@@ -120,4 +120,14 @@
     <string name="guest_err_no_reply">No reply from the home network.</string>
     <string name="guest_err_service_off">The key service has been switched off. Ask the owner for full access.</string>
     <string name="guest_err_integrity">Guest access is not possible on this phone (app not from Google Play or device not approved).</string>
+    <string name="web_file_choose">Choose file</string>
+    <string name="web_file_no_picker">No app for choosing files found.</string>
+    <string name="web_file_loading">Loading file …</string>
+    <string name="web_file_failed">File could not be loaded: %1$s</string>
+    <string name="web_file_too_large">larger than %1$d MB</string>
+    <string name="web_file_saved">Saved: %1$s</string>
+    <string name="web_file_save_failed">Could not save %1$s.</string>
+    <string name="web_file_blob">This page creates the file itself – HomeHyrax cannot open it yet.</string>
+    <string name="web_file_got_page">the page returned a web page instead of the file – please log in again</string>
+    <string name="web_file_blocked">redirected to an address this entry may not open</string>
 </resources>
