@@ -14,6 +14,7 @@ import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -93,7 +94,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
@@ -115,11 +115,19 @@ class WebAppActivity : FragmentActivity() {
     private var phase by mutableStateOf<Phase>(Phase.Connecting("..."))
     private var viaTunnel by mutableStateOf(false)
     private var showBadge by mutableStateOf(false)
-    /** zaehlt jedes "nach unten ziehen": Menue-Knopf fuer ein paar Sekunden zeigen */
+    /** zaehlt jedes Laden der Seite: Menue-Knopf fuer ein paar Sekunden zeigen */
     private var menuAnstoss by mutableStateOf(0)
-    private lateinit var pull: SwipeRefreshLayout
-    /** Finger liegt in einem inneren Scrollbereich der Seite, der nicht ganz oben steht (meldet PULL_JS). */
-    @Volatile private var innerScrolled = false
+    private var menuOpen by mutableStateOf(false)
+    /** Die Seite nutzt die aktuelle Beruehrung selbst (innerer Scrollbereich, Ziehen-Sortieren ...; meldet PULL_JS). */
+    @Volatile private var pageBusy = false
+    // "zweimal oben nach unten wischen": nur mitzaehlen, nie abfangen (die Seite bekommt jede Beruehrung)
+    private var swipeX = 0f
+    private var swipeY = 0f
+    private var swipeAtTop = false
+    private var swipeValid = false
+    private var lastSwipeAt = 0L
+    /** lange im Hintergrund, aber noch gesperrt: nach dem Entsperren neu pruefen und laden */
+    private var refreshAfterUnlock = false
 
     private lateinit var app: WebApp
     private var tunnel: Tunnel? = null
@@ -141,7 +149,7 @@ class WebAppActivity : FragmentActivity() {
         set(v) {
             lockedState = v
             // offene Mikrofon-Rueckfrage nicht hinter der Sperre stehen lassen (Schliessen = ablehnen)
-            if (v) { micDialog?.dismiss(); menuAnstoss = 0 }
+            if (v) { micDialog?.dismiss(); menuAnstoss = 0; menuOpen = false }
             if (::web.isInitialized) {
                 web.visibility = if (v) View.INVISIBLE else View.VISIBLE
                 if (v) web.onPause() else web.onResume()
@@ -226,17 +234,6 @@ class WebAppActivity : FragmentActivity() {
         goFullscreen()
 
         web = createWebView()
-        // ganz oben nach unten ziehen zeigt kurz das Menue (frueher: neu laden - passierte beim Scrollen versehentlich)
-        pull = SwipeRefreshLayout(this).apply {
-            addView(web)
-            setOnRefreshListener {
-                isRefreshing = false
-                if (!locked) menuAnstoss++
-            }
-            // nicht nur die Seite selbst, auch innere Scrollbereiche (Dialoge, Seiten wie Home Assistant) zaehlen:
-            // sonst faengt das Ziehen dort das Hochscrollen ab
-            setOnChildScrollUpCallback { _, _ -> web.canScrollVertically(-1) || innerScrolled }
-        }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (web.canGoBack()) web.goBack() else finishAndRemoveTask()
@@ -279,6 +276,7 @@ class WebAppActivity : FragmentActivity() {
                     locked = false
                     Net.webAppVisible(true, app)   // erst entsperrt: Ziel fuer den Proxy-Ausweichmodus freigeben
                     if (!startedOnce) { startedOnce = true; lifecycleScope.launch { start() } }
+                    else if (refreshAfterUnlock) { refreshAfterUnlock = false; retry() }
                 }
                 err == null -> finishAndRemoveTask()   // abgebrochen
                 else -> lockError = err
@@ -364,6 +362,7 @@ class WebAppActivity : FragmentActivity() {
     private fun fail(msg: String) { phase = Phase.Failed(msg) }
 
     private fun retry() {
+        if (phase is Phase.Connecting) return   // sonst liefen zwei start() gleichzeitig
         fallbackTried = false
         proxyAuthTries = 0
         lifecycleScope.launch { start() }
@@ -384,6 +383,12 @@ class WebAppActivity : FragmentActivity() {
             android.os.SystemClock.elapsedRealtime() - hiddenAt > RELOCK_MS) {
             locked = true
             unlock()
+        }
+        // lange weg: vielleicht nicht mehr zuhause, Seite veraltet -> neu pruefen und laden (wie "Aktualisieren")
+        if (startedOnce && hiddenAt > 0 && android.os.SystemClock.elapsedRealtime() - hiddenAt > REFRESH_AFTER_MS) {
+            // gesperrt: nichts still hinter der Sperre aufbauen, retry() nach dem Entsperren holt Tunnel und Route
+            if (locked) { refreshAfterUnlock = true; return }
+            if (phase !is Phase.Connecting) { retry(); return }
         }
         // Routen sind global je Host: eine andere Kachel/Kamera kann sie inzwischen umgestellt haben
         if (loadedOnce) Net.route(app, if (viaTunnel) tunnel?.id else null)
@@ -424,7 +429,7 @@ class WebAppActivity : FragmentActivity() {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.mediaPlaybackRequiresUserGesture = false
-        // einzige Bruecke zur Seite: ein Wahr/Falsch fuer "Nach unten ziehen" (siehe PULL_JS)
+        // einzige Bruecke zur Seite: ein Wahr/Falsch fuer "zweimal nach unten wischen" (siehe PULL_JS)
         addJavascriptInterface(PullBridge(), "HomeHyraxPull")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
             WebViewCompat.addDocumentStartJavaScript(this, PULL_JS, setOf("*"))
@@ -599,7 +604,7 @@ class WebAppActivity : FragmentActivity() {
     }
 
     private inner class PullBridge {
-        @JavascriptInterface fun inner(scrolled: Boolean) { innerScrolled = scrolled }
+        @JavascriptInterface fun inner(busy: Boolean) { pageBusy = busy }
     }
 
     private inner class Client : WebViewClient() {
@@ -607,7 +612,7 @@ class WebAppActivity : FragmentActivity() {
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             // neue Seite: alter Wert aus einem Dialog der vorigen Seite gilt nicht mehr (sonst haengt die Sperre,
             // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
-            innerScrolled = false
+            pageBusy = false
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -619,6 +624,7 @@ class WebAppActivity : FragmentActivity() {
                 awaitingLoad = false
                 phase = Phase.Ready
                 flashBadge()
+                menuAnstoss++   // Menue-Knopf kurz zeigen, damit man weiss, dass es ihn gibt
             }
         }
 
@@ -794,7 +800,7 @@ class WebAppActivity : FragmentActivity() {
     @androidx.compose.runtime.Composable
     private fun Screen() {
         Box(Modifier.fillMaxSize().background(Color(0xFF101418)).then(if (app.fullscreen) Modifier else Modifier.systemBarsPadding())) {
-            AndroidView(factory = { pull }, modifier = Modifier.fillMaxSize())
+            AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
 
             when (val p = phase) {
                 is Phase.Connecting -> Cover { Busy(p.text) }
@@ -827,12 +833,41 @@ class WebAppActivity : FragmentActivity() {
         if (viaTunnel) stringResource(R.string.web_badge_away, if (tunnel?.isTailscale == true) "Tailscale" else "WireGuard")
         else stringResource(R.string.web_badge_home)
 
-    /** Menue oben rechts: erscheint nach "nach unten ziehen" (laedt nicht mehr neu, das passierte beim Scrollen versehentlich). */
+    /**
+     * Beobachtet nur (gibt jede Beruehrung unveraendert weiter): zweimal kurz hintereinander ganz oben mit einem Finger
+     * nach unten wischen oeffnet das Menue. Frueher fing ein SwipeRefreshLayout das Ziehen ab - dann ging z. B.
+     * Ziehen-Sortieren in der Seite nicht, und der Kreisel stoerte.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                swipeX = ev.rawX; swipeY = ev.rawY
+                swipeValid = true
+                swipeAtTop = ::web.isInitialized && !web.canScrollVertically(-1)
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> swipeValid = false
+            MotionEvent.ACTION_UP -> {
+                val dy = ev.rawY - swipeY
+                val dx = kotlin.math.abs(ev.rawX - swipeX)
+                val swipe = swipeValid && swipeAtTop && !pageBusy && phase == Phase.Ready && !locked &&
+                    dy > SWIPE_MIN_DP * resources.displayMetrics.density && dx < dy / 2
+                if (swipe) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastSwipeAt < DOUBLE_SWIPE_MS) { lastSwipeAt = 0; menuOpen = true }
+                    else lastSwipeAt = now
+                }
+                swipeValid = false
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** Menue oben rechts: Knopf kurz nach dem Laden, sonst per "zweimal oben nach unten wischen" (ohne Abfangen). */
     @androidx.compose.runtime.Composable
     private fun Menu(modifier: Modifier) {
-        var open by remember { mutableStateOf(false) }
+        var open by ::menuOpen
         var sichtbar by remember { mutableStateOf(false) }
-        // erscheint nach "nach unten ziehen", verschwindet nach ein paar Sekunden ohne Tipp (auch nach dem Schliessen)
+        // erscheint nach dem Laden, verschwindet nach ein paar Sekunden ohne Tipp (auch nach dem Schliessen)
         LaunchedEffect(menuAnstoss, open) {
             if (open || menuAnstoss == 0) return@LaunchedEffect
             sichtbar = true
@@ -927,23 +962,37 @@ class WebAppActivity : FragmentActivity() {
     companion object {
         private const val RELOCK_MS = 60_000L
         private const val MENU_SICHTBAR_MS = 4_000L
+        /** Abstand der beiden Wischer fuer das Menue */
+        private const val DOUBLE_SWIPE_MS = 1_500L
+        private const val SWIPE_MIN_DP = 60
+        /** so lange im Hintergrund -> beim Zurueckkehren neu pruefen und laden */
+        private const val REFRESH_AFTER_MS = 30 * 60_000L
     }
 }
 
 /**
- * Meldet bei jeder Beruehrung, ob der Finger in einem Scrollbereich liegt, der schon nach unten gescrollt ist.
- * Dann ist Hochwischen Scrollen und nicht "neu laden". Laeuft ueber composedPath (auch durch Shadow DOM, z. B.
- * Dialoge in Web Components); in einem iframe zaehlt auch dessen eigenes Dokument, das die App nicht sieht.
+ * Meldet bei jeder Beruehrung, ob die Seite sie selbst nutzt - dann zaehlt das Wischen nicht fuer das Menue:
+ * Finger in einem Scrollbereich, der schon nach unten gescrollt ist (Hochwischen = Scrollen); Element ohne
+ * senkrechtes Verschieben per CSS touch-action (Griffe zum Sortieren, Karten, Regler; html/body zaehlen nicht,
+ * sonst waere das Menue auf solchen Seiten unerreichbar); Seite ruft preventDefault bei touchstart/touchmove (auch
+ * mit stopPropagation: das zuletzt gesehene Ereignis wird beim naechsten geprueft). Laeuft ueber composedPath (auch durch Shadow DOM, z. B. Dialoge in Web Components);
+ * in einem iframe zaehlt auch dessen eigenes Dokument, das die App nicht sieht.
  */
 private const val PULL_JS =
-    "(function(){if(window.__hhPull)return;window.__hhPull=1;" +
+    "(function(){if(window.__hhPull)return;window.__hhPull=1;var b=false,l=null;" +
+    "function r(s){b=s;try{HomeHyraxPull.inner(s);}catch(x){}}" +
     "function sc(n){var o=getComputedStyle(n).overflowY;return o==='auto'||o==='scroll'||o==='overlay';}" +
-    "document.addEventListener('touchstart',function(e){var s=false,se=document.scrollingElement," +
+    "function ta(n){if(n===document.body||n===document.documentElement)return false;" +
+    "var t=getComputedStyle(n).touchAction;return !!t&&t!=='auto'&&t!=='manipulation'&&" +
+    "t.indexOf('pan-y')<0&&t.indexOf('pan-up')<0&&t.indexOf('pan-down')<0;}" +
+    "function pv(){if(!b&&l&&l.defaultPrevented)r(true);}" +
+    "document.addEventListener('touchstart',function(e){l=e;var s=false,se=document.scrollingElement," +
     "p=e.composedPath?e.composedPath():[e.target];" +
     "for(var i=0;i<p.length&&!s;i++){var n=p[i];if(!n||n.nodeType!==1)continue;" +
-    "if(n===se)break;if(n.scrollTop>0&&sc(n))s=true;}" +
-    "if(!s&&window!==top&&se&&se.scrollTop>0)s=true;" +
-    "try{HomeHyraxPull.inner(s);}catch(x){}},{capture:true,passive:true});})()"
+    "if(ta(n))s=true;if(n===se)break;if(n.scrollTop>0&&sc(n))s=true;}" +
+    "if(!s&&window!==top&&se&&se.scrollTop>0)s=true;r(s);},{capture:true,passive:true});" +
+    "document.addEventListener('touchmove',function(e){pv();l=e;},{capture:true,passive:true});" +
+    "document.addEventListener('touchend',function(){pv();l=null;},{capture:true,passive:true});})()"
 
 private const val DESKTOP_VIEWPORT_JS =
     "(function(){var m=document.querySelector('meta[name=viewport]');" +

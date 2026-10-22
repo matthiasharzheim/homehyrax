@@ -115,8 +115,6 @@ dependencies {
     implementation("com.google.android.play:integrity:1.4.0")
     // biometric bringt Fragment 1.2 mit - zu alt fuer registerForActivityResult
     implementation("androidx.fragment:fragment-ktx:1.8.9")
-    // Web-App: "oben nach unten ziehen" zeigt das Menue
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     // Kamera: RTSP-Livebild (ExoPlayer + RTSP + PlayerView)
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-exoplayer-rtsp:1.8.0")
