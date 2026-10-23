@@ -255,6 +255,10 @@ func isEventStream(r *http.Request) bool {
 func serveProxy(w http.ResponseWriter, r *http.Request) {
 	ok, open := authorized(r)
 	if !ok {
+		if r.Method == http.MethodConnect {
+			connectAfter407(w, r)
+			return
+		}
 		deny407(w)
 		return
 	}
@@ -298,6 +302,61 @@ func serveConnect(w http.ResponseWriter, r *http.Request, open bool) {
 		target.Close()
 		return
 	}
+	pipeConnect(client, buf.Reader, target, open)
+}
+
+// connectAfter407 beantwortet ein CONNECT ohne Anmeldung mit 407 und wartet
+// auf derselben Verbindung auf den Versuch mit Anmeldung. net/http schliesst
+// die Verbindung nach einer Antwort auf CONNECT, Androids HttpURLConnection
+// (OkHttp 2) schickt den zweiten Versuch aber ueber denselben Socket.
+func connectAfter407(w http.ResponseWriter, r *http.Request) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		deny407(w)
+		return
+	}
+	client, buf, err := hj.Hijack()
+	if err != nil {
+		return
+	}
+	for try := 0; ; try++ {
+		// nach 3 Versuchen: letzte 407 mit "Connection: close", damit der Client neu verbindet statt EOF zu sehen
+		last := try >= 3
+		closing := ""
+		if last {
+			closing = "Connection: close\r\n"
+		}
+		buf.WriteString("HTTP/1.1 407 Proxy Authentication Required\r\n" +
+			"Proxy-Authenticate: Basic realm=\"" + ProxyRealm + "\"\r\n" +
+			ProxyMarkerHeader + ": " + proxyMarker + "\r\n" + closing + "Content-Length: 0\r\n\r\n")
+		if buf.Flush() != nil || last {
+			break
+		}
+		client.SetReadDeadline(time.Now().Add(30 * time.Second))
+		req, err := http.ReadRequest(buf.Reader)
+		if err != nil || req.Method != http.MethodConnect {
+			break
+		}
+		client.SetReadDeadline(time.Time{})
+		// open = inzwischen Ausweichmodus ohne Passwort: dafuer gelten eigene Regeln -> neu verbinden lassen
+		if ok, open := authorized(req); ok {
+			if open {
+				break
+			}
+			target, err := dialRouted(r.Context(), "tcp", req.Host)
+			if err != nil {
+				client.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"))
+				break
+			}
+			pipeConnect(client, buf.Reader, target, false)
+			return
+		}
+	}
+	client.Close()
+}
+
+// pipeConnect bestaetigt das CONNECT und leitet in beide Richtungen weiter.
+func pipeConnect(client net.Conn, br *bufio.Reader, target net.Conn, open bool) {
 	if open {
 		// auch das Ziel schliessen, wenn wieder ein Passwort gilt
 		if !trackOpen(target) {
@@ -310,7 +369,7 @@ func serveConnect(w http.ResponseWriter, r *http.Request, open bool) {
 	defer untrack(client)
 	client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	go func() {
-		io.Copy(target, bufferedReader(client, buf.Reader))
+		io.Copy(target, bufferedReader(client, br))
 		if cw, ok := target.(interface{ CloseWrite() error }); ok {
 			cw.CloseWrite()
 		}

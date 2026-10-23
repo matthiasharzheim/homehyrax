@@ -113,12 +113,12 @@ jobs:
 
       # Nur 64-Bit: APK ~24 MB statt ~45 MB, alle aktuellen Handys sind 64-Bit
       # Lint auch bei PRs (~1-2 min mehr): sonst fallen Lint-Fehler erst nach dem Merge auf main auf
-      - name: APK bauen (inkl. Lint)
+      - name: APK bauen (inkl. Unit-Tests und Lint)
         env:
           SIDELOAD_KEYSTORE_PASSWORD: ${{ secrets.SIDELOAD_KEYSTORE_PASSWORD }}
           SIDELOAD_KEY_ALIAS: ${{ secrets.SIDELOAD_KEY_ALIAS }}
           SIDELOAD_KEY_PASSWORD: ${{ secrets.SIDELOAD_KEY_PASSWORD }}
-        run: ./gradlew lintRelease assembleRelease -Pabis=arm64-v8a --console=plain
+        run: ./gradlew testReleaseUnitTest lintRelease assembleRelease -Pabis=arm64-v8a --console=plain
 
       - uses: actions/upload-artifact@v7
         with:

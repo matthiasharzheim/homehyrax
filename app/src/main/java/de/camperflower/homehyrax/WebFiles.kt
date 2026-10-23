@@ -51,16 +51,12 @@ object WebFiles {
 
     /**
      * Anmeldung am eigenen Proxy ueber java.net.Authenticator (Antwort auf 407) statt als Kopfzeile: bei https
-     * ginge eine gesetzte Kopfzeile sonst auch verschluesselt bis zum Geraet. Nur fuer 127.0.0.1 und den
-     * eigenen Proxy-Port, sonst keine Zugangsdaten.
+     * ginge eine gesetzte Kopfzeile sonst auch verschluesselt bis zum Geraet. Nur fuer Loopback und den
+     * eigenen Proxy-Port, sonst keine Zugangsdaten (siehe ProxyAuth).
      */
     private val proxyLogin by lazy {
-        java.net.Authenticator.setDefault(object : java.net.Authenticator() {
-            override fun getPasswordAuthentication(): java.net.PasswordAuthentication? {
-                val own = requestorType == RequestorType.PROXY && requestingHost == "127.0.0.1" &&
-                    requestingPort.toLong() == Net.proxyPort && Net.proxyAuthWorks
-                return if (own) java.net.PasswordAuthentication(Wgbridge.ProxyUser, Net.proxySecret.toCharArray()) else null
-            }
+        java.net.Authenticator.setDefault(ProxyAuth.authenticator({ Net.proxyPort }, Wgbridge.ProxyUser) {
+            if (Net.proxyAuthWorks) Net.proxySecret else null
         })
     }
 

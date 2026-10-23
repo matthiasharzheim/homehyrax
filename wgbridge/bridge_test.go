@@ -557,6 +557,60 @@ func TestConnectThroughTunnel(t *testing.T) {
 	}
 }
 
+// Androids HttpURLConnection (OkHttp 2) schickt nach der 407 auf ein CONNECT das zweite CONNECT mit
+// Anmeldung auf DERSELBEN Verbindung - der Proxy darf sie nach der 407 also nicht schliessen.
+func TestConnectAuthRetrySameConn(t *testing.T) {
+	pu := setup(t)
+	c, err := net.Dial("tcp", pu.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	br := bufio.NewReader(c)
+	fmt.Fprint(c, "CONNECT 10.9.0.1:7 HTTP/1.1\r\nHost: 10.9.0.1:7\r\n\r\n")
+	res, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusProxyAuthRequired || res.Close {
+		t.Fatalf("erste Antwort: %d, close=%v", res.StatusCode, res.Close)
+	}
+	// falsches Passwort: wieder 407, Verbindung bleibt offen
+	bad := base64.StdEncoding.EncodeToString([]byte(ProxyUser + ":falsch"))
+	fmt.Fprintf(c, "CONNECT 10.9.0.1:7 HTTP/1.1\r\nHost: 10.9.0.1:7\r\nProxy-Authorization: Basic %s\r\n\r\n", bad)
+	res, err = http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusProxyAuthRequired || res.Header.Get(ProxyMarkerHeader) != ProxyMarker() {
+		t.Fatalf("falsches Passwort: %d", res.StatusCode)
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte(ProxyUser + ":geheim"))
+	fmt.Fprintf(c, "CONNECT 10.9.0.1:7 HTTP/1.1\r\nHost: 10.9.0.1:7\r\nProxy-Authorization: Basic %s\r\n\r\n", auth)
+	status, err := br.ReadString('\n')
+	if err != nil || !strings.Contains(status, "200") {
+		t.Fatalf("zweites CONNECT: %q %v", status, err)
+	}
+	for {
+		l, err := br.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l == "\r\n" || l == "\n" {
+			break
+		}
+	}
+	fmt.Fprint(c, "ping\n")
+	if echo, _ := br.ReadString('\n'); echo != "ping\n" {
+		t.Fatalf("echo %q", echo)
+	}
+}
+
 func TestDefaultRouteNotCaptured(t *testing.T) {
 	cfg := &wgConfig{peers: []wgPeer{{allowedIPs: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}}}}
 	if cfg.covers(netip.MustParseAddr("8.8.8.8")) {

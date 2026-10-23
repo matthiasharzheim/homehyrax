@@ -119,4 +119,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-exoplayer-rtsp:1.8.0")
     implementation("androidx.media3:media3-ui:1.8.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
