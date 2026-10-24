@@ -106,8 +106,8 @@ Signing (all optional, none of it is in the repository):
 
 `versionCode` = CI run number + offset (default 100; `-PversionOffset=…`, environment or CI repository variable
 `VERSION_OFFSET`). The offset must be above every build already distributed, otherwise Android rejects the update.
-In CI, the optional secrets `SIDELOAD_KEYSTORE_B64` (base64 of the `.jks`) + `SIDELOAD_KEYSTORE_PASSWORD` sign the
-APK; `UPLOAD_KEYSTORE_B64` + passwords additionally build the store bundle (AAB).
+CI builds an unsigned release APK for review; the store bundle (AAB) is signed with the upload key
+(`UPLOAD_KEYSTORE_B64` + passwords). The emulator APK (manual run) is signed with a throwaway key generated for that run.
 Versions are pinned on purpose (AGP 8.13, Kotlin 2.2, Compose BOM 2025.10, compileSdk 36, minSdk 26, NDK r28c).
 
 The Go tests build real counterparts in-process: a second WireGuard peer (handshake, GET, POST, SSE, CONNECT,

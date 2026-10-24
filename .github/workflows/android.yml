@@ -8,8 +8,8 @@ name: Android App
 #
 # Einstellungen je Repo:
 #   Variable VERSION_OFFSET        Versatz fuer versionCode (Standard 100, muss ueber allen verteilten Builds liegen)
-#   Secrets SIDELOAD_KEYSTORE_B64 + SIDELOAD_KEYSTORE_PASSWORD (+ SIDELOAD_KEY_ALIAS, SIDELOAD_KEY_PASSWORD)
-#                                  signieren die APK; ohne sie ist die Release-APK unsigniert
+#   Kein Sideload-Schluessel mehr (stillgelegt 24.10.2026, Installation nur ueber Google Play): die Release-APK
+#                                  ist unsigniert; die Emulator-APK (Handstart) signiert ein Wegwerf-Schluessel je Lauf
 #   Umgebung "play" (nur Branch main zugelassen) mit den Secrets UPLOAD_KEYSTORE_B64, UPLOAD_KEYSTORE_PASSWORD,
 #                                  UPLOAD_KEY_ALIAS, UPLOAD_KEY_PASSWORD und PLAY_SERVICE_ACCOUNT_JSON
 # Secrets bekommen PRs aus Forks nie; Upload-Schluessel und Dienstkonto braucht nur der Job "play" auf main,
@@ -43,7 +43,6 @@ jobs:
     if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     env:
-      HAS_SIDELOAD_KEY: ${{ secrets.SIDELOAD_KEYSTORE_B64 != '' }}
       # Artefakte im privaten Repo nur 1 Tag (Speicher-Kontingent des Kontos), im oeffentlichen 14 Tage
       KEEP_DAYS: ${{ github.event.repository.private && '1' || '14' }}
     steps:
@@ -102,39 +101,27 @@ jobs:
         run: |
           go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... || echo "::warning title=govulncheck::Bekannte Go-Sicherheitsluecken gefunden - Ausgabe im Log pruefen"
 
-      # Sideload-Signatur nur, wenn das Secret existiert (Secrets fehlen bei PRs aus Forks)
-      - name: Sideload-Schluessel
-        if: env.HAS_SIDELOAD_KEY == 'true'
-        env:
-          SIDELOAD_KEYSTORE_B64: ${{ secrets.SIDELOAD_KEYSTORE_B64 }}
-        run: |
-          echo "$SIDELOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/sideload.jks"
-          echo "SIDELOAD_KEYSTORE=$RUNNER_TEMP/sideload.jks" >> "$GITHUB_ENV"
-
       # Nur 64-Bit: APK ~24 MB statt ~45 MB, alle aktuellen Handys sind 64-Bit
       # Lint auch bei PRs (~1-2 min mehr): sonst fallen Lint-Fehler erst nach dem Merge auf main auf
       - name: APK bauen (inkl. Unit-Tests und Lint)
-        env:
-          SIDELOAD_KEYSTORE_PASSWORD: ${{ secrets.SIDELOAD_KEYSTORE_PASSWORD }}
-          SIDELOAD_KEY_ALIAS: ${{ secrets.SIDELOAD_KEY_ALIAS }}
-          SIDELOAD_KEY_PASSWORD: ${{ secrets.SIDELOAD_KEY_PASSWORD }}
         run: ./gradlew testReleaseUnitTest lintRelease assembleRelease -Pabis=arm64-v8a --console=plain
 
       - uses: actions/upload-artifact@v7
         with:
           name: HomeHyrax-apk
-          # app-release.apk (signiert) oder app-release-unsigned.apk
+          # app-release-unsigned.apk (ohne Signatur, nur zum Pruefen; installiert wird ueber Google Play)
           path: app/build/outputs/apk/release/app-release*.apk
           if-no-files-found: error
           retention-days: ${{ env.KEEP_DAYS }}
 
+      # Emulator braucht eine signierte APK: Wegwerf-Schluessel nur fuer diesen Lauf (zufaelliges Passwort,
+      # wird danach geloescht). Jede Emulator-APK hat damit eine andere Signatur -> vorher deinstallieren.
       - name: Emulator-APK (x86_64, nur von Hand gestartet)
         if: github.event_name == 'workflow_dispatch'
-        env:
-          SIDELOAD_KEYSTORE_PASSWORD: ${{ secrets.SIDELOAD_KEYSTORE_PASSWORD }}
-          SIDELOAD_KEY_ALIAS: ${{ secrets.SIDELOAD_KEY_ALIAS }}
-          SIDELOAD_KEY_PASSWORD: ${{ secrets.SIDELOAD_KEY_PASSWORD }}
         run: |
+          export SIDELOAD_KEYSTORE="$RUNNER_TEMP/wegwerf.jks" SIDELOAD_KEY_ALIAS=emulator
+          export SIDELOAD_KEYSTORE_PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair -keystore "$SIDELOAD_KEYSTORE" -storepass "$SIDELOAD_KEYSTORE_PASSWORD" -alias emulator -keyalg EC -groupname secp256r1 -validity 30 -dname "CN=HomeHyrax Emulator" > /dev/null
           rm -f app/build/outputs/apk/release/app-release*.apk
           ./gradlew assembleRelease -Pabis=x86_64 --console=plain
           apk=$(ls app/build/outputs/apk/release/app-release*.apk | head -n 1)
@@ -148,9 +135,9 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.KEEP_DAYS }}
 
-      - name: Schluessel entfernen
+      - name: Wegwerf-Schluessel entfernen
         if: always()
-        run: rm -f "$RUNNER_TEMP/sideload.jks"
+        run: rm -f "$RUNNER_TEMP/wegwerf.jks"
 
   # Jeder Stand auf main des oeffentlichen Repos geht automatisch in den internen Test von Google Play;
   # Tester bekommen ihn als normales Update. Produktion bleibt Handarbeit in der Play Console.

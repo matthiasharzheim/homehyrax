@@ -56,8 +56,7 @@ android {
         if (sideloadKeystore != null && sideloadStorePassword != null) create("sideload") {
             storeFile = sideloadKeystore
             storePassword = sideloadStorePassword
-            // Standard-Alias = Alias im vorhandenen Sideload-Schluessel (stammt vom frueheren App-Namen)
-            keyAlias = setting("SIDELOAD_KEY_ALIAS", "sideload.keyAlias") ?: "hometunnel"
+            keyAlias = setting("SIDELOAD_KEY_ALIAS", "sideload.keyAlias") ?: "sideload"
             keyPassword = setting("SIDELOAD_KEY_PASSWORD", "sideload.keyPassword") ?: sideloadStorePassword
         }
         if (uploadKeystore != null) create("upload") {

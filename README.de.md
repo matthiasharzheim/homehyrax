@@ -108,8 +108,9 @@ Signieren (alles optional, nichts davon liegt im Repo):
 
 `versionCode` = CI-Laufnummer + Versatz (Standard 100; `-PversionOffset=…`, Umgebung bzw. CI-Repository-Variable
 `VERSION_OFFSET`). Der Versatz muss über allen bereits verteilten Builds liegen, sonst lehnt Android das Update ab.
-In der CI signieren optional die Secrets `SIDELOAD_KEYSTORE_B64` (base64 der `.jks`) + `SIDELOAD_KEYSTORE_PASSWORD`
-die APK, `UPLOAD_KEYSTORE_B64` + Passwörter erzeugen zusätzlich das Store-Bundle (AAB).
+Die CI baut eine unsignierte Release-APK zum Prüfen; das Store-Bundle (AAB) signiert der Upload-Schlüssel
+(`UPLOAD_KEYSTORE_B64` und Passwörter). Die Emulator-APK (Handstart) signiert ein Wegwerf-Schlüssel, den der Lauf selbst
+erzeugt.
 Versionen sind bewusst gepinnt (AGP 8.13, Kotlin 2.2, Compose-BOM 2025.10, compileSdk 36, minSdk 26, NDK r28c).
 
 Die Go-Tests bauen echte Gegenstellen im Prozess: einen zweiten WireGuard-Peer (Handshake, GET, POST, SSE, CONNECT,
