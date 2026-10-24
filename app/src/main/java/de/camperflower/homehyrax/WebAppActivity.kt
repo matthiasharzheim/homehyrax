@@ -149,7 +149,7 @@ class WebAppActivity : FragmentActivity() {
         set(v) {
             lockedState = v
             // offene Mikrofon-Rueckfrage nicht hinter der Sperre stehen lassen (Schliessen = ablehnen)
-            if (v) { micDialog?.dismiss(); clipDialog?.dismiss(); menuAnstoss = 0; menuOpen = false }
+            if (v) { micDialog?.dismiss(); menuAnstoss = 0; menuOpen = false }
             if (::web.isInitialized) {
                 web.visibility = if (v) View.INVISIBLE else View.VISIBLE
                 if (v) web.onPause() else web.onResume()
@@ -168,12 +168,6 @@ class WebAppActivity : FragmentActivity() {
         if (ok && micAllowed(r)) r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
         else { r.deny(); if (!ok) Toast.makeText(this, getString(R.string.web_mic_no_permission), Toast.LENGTH_LONG).show() }
     }
-
-    // Zwischenablage (window.HomeHyrax): offene Rueckfrage, eine Anfrage gleichzeitig
-    private var clipDialog: android.app.AlertDialog? = null
-    private var clipBusy = false
-    /** letzte Beruehrung der Seite (Zwischenablage nur kurz nach einem Antippen) */
-    private var lastTouchAt = 0L
 
     // Dateiauswahl (<input type=file>): offene Anfrage der Seite, Foto-Ziel der Kamera
     private var fileCallback: ValueCallback<Array<Uri>>? = null
@@ -418,7 +412,6 @@ class WebAppActivity : FragmentActivity() {
     override fun onDestroy() {
         releaseTunnel()   // falls ein Verbindungsaufbau erst nach onStop fertig wurde
         micDialog?.dismiss()   // offene Mikrofon-Anfrage ablehnen
-        clipDialog?.dismiss()
         fileCallback?.onReceiveValue(null); fileCallback = null
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
@@ -447,7 +440,6 @@ class WebAppActivity : FragmentActivity() {
         }
         // App-Version fuer die Seite/den Dienst erkennbar (z. B. im Protokoll des Dienstes)
         settings.userAgentString = settings.userAgentString + " HomeHyrax/" + BuildConfig.VERSION_NAME
-        clipBridge(this)
         webChromeClient = Chrome()
         webViewClient = Client()
         setDownloadListener { url, ua, disposition, mime, _ -> download(url, ua, disposition, mime) }
@@ -611,91 +603,6 @@ class WebAppActivity : FragmentActivity() {
         }
         micRequest = r
         askMicPermission.launch(Manifest.permission.RECORD_AUDIO)
-    }
-
-    /**
-     * Zwischenablage fuer die Seite (siehe ClipBridge): nur eigene Web-Eintraege (keine Gaeste), nur genau der Ursprung
-     * der eingetragenen Adresse (Schema, Host, Port) und nur die Hauptseite - per Nachrichtenkanal mit Ursprungsregel,
-     * nicht per addJavascriptInterface (das saehen auch eingebettete fremde Seiten). Alte WebViews: keine Bruecke.
-     */
-    private fun clipBridge(w: WebView) {
-        if (app.kind != KIND_WEB || app.isGuest) return
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
-            !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
-        val u = Uri.parse(app.url)
-        val scheme = u.scheme?.lowercase()?.takeIf { it == "http" || it == "https" } ?: return
-        val host = u.host?.takeIf { it.isNotEmpty() } ?: return
-        val origin = scheme + "://" + host + (if (u.port > 0) ":${u.port}" else "")
-        val port = { x: Uri -> if (x.port > 0) x.port else if (x.scheme.equals("https", true)) 443 else 80 }
-        runCatching {
-            WebViewCompat.addWebMessageListener(w, ClipBridge.CHANNEL, setOf(origin)) { _, message, source, mainFrame, reply ->
-                val id = ClipBridge.anfrage(message.data) ?: return@addWebMessageListener
-                val answer: (String) -> Unit = { json -> runCatching { reply.postMessage(ClipBridge.antwort(id, json)) } }
-                val sameOrigin = source.scheme.equals(u.scheme, true) && source.host.equals(u.host, true) && port(source) == port(u)
-                // ein Antippen = ein Lesen: ohne Beruehrung kurz davor (Einfuegen-Knopf) liest die Seite nichts
-                val touched = android.os.SystemClock.elapsedRealtime() - lastTouchAt < CLIP_TOUCH_MS
-                when {
-                    !mainFrame || !sameOrigin || locked || isFinishing || isDestroyed || !touched ||
-                        !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ->
-                        answer(ClipBridge.fehler("verweigert"))
-                    clipBusy -> answer(ClipBridge.fehler("intern", "busy"))
-                    app.clip -> readClip(answer)
-                    else -> askClip(answer)
-                }
-            }
-            WebViewCompat.addDocumentStartJavaScript(w, ClipBridge.JS, setOf(origin))
-        }
-    }
-
-    /** Erstes Mal: wie beim Mikrofon fragen; "Erlauben" gilt fuer diesen Eintrag (Bearbeiten -> Erweitert). */
-    private fun askClip(answer: (String) -> Unit) {
-        if (clipDialog != null) { answer(ClipBridge.fehler("verweigert")); return }
-        var answered = false
-        clipDialog = android.app.AlertDialog.Builder(this)
-            .setTitle(getString(R.string.web_clip_title))
-            .setMessage(getString(R.string.web_clip_message, app.host))
-            .setPositiveButton(getString(R.string.web_mic_allow)) { _, _ ->
-                answered = true
-                val cur = store.app(app.id) ?: app
-                if (runCatching { store.saveApp(cur.copy(clip = true)) }.isSuccess) app = app.copy(clip = true)
-                clipBusy = true   // waehrend des Wartens keine zweite Anfrage parallel
-                // erst lesen, wenn das Fenster wieder den Fokus hat (Android 10+ gibt die Zwischenablage sonst nicht her)
-                lifecycleScope.launch {
-                    for (i in 0 until 20) { if (hasWindowFocus()) break; delay(50) }
-                    clipBusy = false
-                    if (locked || isFinishing || isDestroyed || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-                        answer(ClipBridge.fehler("verweigert"))
-                    else readClip(answer)
-                }
-            }
-            .setNegativeButton(getString(R.string.web_mic_deny), null)
-            .setOnDismissListener {
-                clipDialog = null
-                if (!answered) answer(ClipBridge.fehler("verweigert", getString(R.string.web_clip_denied)))
-            }
-            .show()
-    }
-
-    /** Zwischenablage auf dem UI-Thread holen, Inhalt (Bilder bis 20 MB) im Hintergrund lesen. */
-    private fun readClip(answer: (String) -> Unit) {
-        // ohne Fensterfokus liefert Android 10+ nichts - sonst bekaeme die Seite irrefuehrend "leer"
-        if (!hasWindowFocus()) { answer(ClipBridge.fehler("verweigert", "focus")); return }
-        val clip = try {
-            getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
-        } catch (_: SecurityException) {
-            answer(ClipBridge.fehler("verweigert")); return
-        }
-        // als sensibel markiert (Passwort-Manager): nie an die Seite
-        if (ClipBridge.sensitive(clip)) { answer(ClipBridge.fehler("verweigert", "sensitive")); return }
-        clipBusy = true
-        lifecycleScope.launch {
-            try {
-                val json = withContext(Dispatchers.IO) { ClipBridge.lesen(this@WebAppActivity, clip) }
-                answer(if (locked) ClipBridge.fehler("verweigert") else json)
-            } finally {
-                clipBusy = false
-            }
-        }
     }
 
     private inner class PullBridge {
@@ -942,7 +849,6 @@ class WebAppActivity : FragmentActivity() {
             }
             MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> swipeValid = false
             MotionEvent.ACTION_UP -> {
-                lastTouchAt = android.os.SystemClock.elapsedRealtime()
                 val dy = ev.rawY - swipeY
                 val dx = kotlin.math.abs(ev.rawX - swipeX)
                 val swipe = swipeValid && swipeAtTop && !pageBusy && phase == Phase.Ready && !locked &&
@@ -1063,8 +969,6 @@ class WebAppActivity : FragmentActivity() {
         private const val SWIPE_MIN_DP = 60
         /** so lange im Hintergrund -> beim Zurueckkehren neu pruefen und laden */
         private const val REFRESH_AFTER_MS = 30 * 60_000L
-        /** Zwischenablage nur so kurz nach dem letzten Antippen der Seite (Einfuegen-Knopf) */
-        private const val CLIP_TOUCH_MS = 5_000L
     }
 }
 

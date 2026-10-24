@@ -20,9 +20,6 @@
     <string name="web_mic_allow">Erlauben</string>
     <string name="web_mic_deny">Ablehnen</string>
     <string name="web_mic_no_permission">Der Mikrofonzugriff ist für HomeHyrax in den Android-Einstellungen aus.</string>
-    <string name="web_clip_title">Zwischenablage lesen?</string>
-    <string name="web_clip_message">%1$s möchte beim Einfügen die Zwischenablage lesen (Bilder und Text).\n\nFür diesen Eintrag erlauben? Abschalten unter Bearbeiten → Erweitert.</string>
-    <string name="web_clip_denied">Zwischenablage für diesen Eintrag nicht erlaubt</string>
     <string name="web_cert_cancelled">Verbindung abgebrochen (Zertifikat).</string>
     <string name="web_no_answer">%1$s antwortet nicht.</string>
     <string name="web_unreachable">%1$s ist nicht erreichbar.</string>
