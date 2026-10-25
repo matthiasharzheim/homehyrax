@@ -192,6 +192,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -1660,12 +1661,29 @@ class MainActivity : FragmentActivity() {
             }
         }
         confirmDelete?.let { t ->
+            val used = remember(t.id) { runCatching { store.appsOfTunnel(t) }.getOrDefault(emptyList()) }
+            fun remove(withApps: Boolean) {
+                confirmDelete = null
+                var gone = emptyList<String>()
+                if (safeStore { gone = store.deleteTunnel(t.id, withApps) }) gone.forEach { Shortcuts.remove(ctx, it) }
+                reload()
+            }
             AlertDialog(
                 onDismissRequest = { confirmDelete = null },
                 title = { Text(stringResource(R.string.main_delete_title, t.name)) },
-                text = { Text(stringResource(if (t.isGuest) R.string.guest_delete_tunnel_text else R.string.main_delete_tunnel_text)) },
-                confirmButton = { TextButton(onClick = { safeStore { store.deleteTunnel(t.id) }; confirmDelete = null; reload() }) { Text(stringResource(R.string.main_delete)) } },
-                dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.main_cancel)) } },
+                text = { Text(if (used.isEmpty()) stringResource(R.string.main_delete_tunnel_empty)
+                    else pluralStringResource(R.plurals.main_delete_tunnel_ask, used.size, used.size)) },
+                confirmButton = {
+                    // Mit Eintraegen: Rueckfrage, ob sie mit geloescht werden (Standard-Weg = behalten)
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (used.isNotEmpty()) TextButton(onClick = { remove(false) }) { Text(stringResource(R.string.main_delete_tunnel_keep)) }
+                        TextButton(onClick = { remove(true) }) {
+                            Text(stringResource(if (used.isEmpty()) R.string.main_delete else R.string.main_delete_tunnel_all),
+                                color = if (used.isEmpty()) Color.Unspecified else MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.main_cancel)) }
+                    }
+                },
             )
         }
     }
@@ -2082,7 +2100,7 @@ class MainActivity : FragmentActivity() {
                     Share.apply(this@MainActivity, a.plan).also {
                         // alte Gastzugaenge ohne Eintraege aufraeumen (loescht auch den Geraeteschluessel)
                         val used = st.apps().mapNotNull { it.tunnelId }.toSet()
-                        st.tunnels().filter { it.isGuest && it.id !in used }.forEach { t -> st.deleteTunnel(t.id) }
+                        st.tunnels().filter { it.isGuest && it.id !in used }.forEach { t -> st.deleteTunnel(t.id, withApps = true) }
                     }
                 }
             }.getOrElse { toast(getString(R.string.main_err_save)); return@launch }

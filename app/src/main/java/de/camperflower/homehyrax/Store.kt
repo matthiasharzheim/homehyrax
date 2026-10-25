@@ -343,32 +343,54 @@ class Store(private val ctx: Context) {
     /** Zustandsordner einer Tailscale-Verbindung (Geraeteschluessel, Anmeldung). */
     fun tailscaleDir(id: String) = File(ctx.filesDir, "ts/$id")
 
-    fun deleteTunnel(id: String) {
+    /**
+     * Verbindung loeschen. withApps = auch alle Eintraege dieser Verbindung loeschen; sonst bleiben sie ohne
+     * Tunnel (nur noch direkt im Heim-WLAN) und lassen sich im Editor einer anderen Verbindung zuordnen.
+     * @return ids der geloeschten Eintraege (Startbildschirm-Symbole entfernt der Aufrufer)
+     */
+    fun deleteTunnel(id: String, withApps: Boolean): List<String> {
         val l = loadTunnels()
         val guest = l.items.firstOrNull { it.id == id }?.takeIf { it.isGuest }
         writeTunnels(l.items.filter { it.id != id }, l.broken.filter { it.optString("id") != id })
         if (guest != null) {
-            // Gast-Eintraege ohne ihren Gastzugang waeren ungeschuetzte Direkt-Kacheln -> mit loeschen,
-            // ebenso die ohne Tunnel geteilten Eintraege derselben Einladung
-            val inv = runCatching { JSONObject(guest.config).getString("inv") }.getOrNull()
-            apps().filter { it.tunnelId == id || (inv != null && it.guest == inv && it.tunnelId == null) }.forEach { deleteApp(it.id) }
-            Guest.forgetDevice(guest)
+            // Zum Gastzugang gehoeren auch die ohne Tunnel geteilten Eintraege derselben Einladung
+            val inv = inviteOf(guest)
+            // Eine Einladung kann mehrere Gast-Verbindungen haben: Gemeinsames erst mit der letzten entfernen
+            val last = inv == null || l.items.none { it.id != id && it.isGuest && inviteOf(it) == inv }
+            val mine = apps().filter { it.tunnelId == id || (last && inv != null && it.guest == inv && it.tunnelId == null) }
+            if (withApps) mine.forEach { deleteApp(it.id) }
+            // Behalten: Eintraege werden eigene ohne Tunnel; versiegelte Passwoerter sind ohne Gastzugang nicht mehr
+            // lesbar und fallen weg (der Gast bekommt sie nie im Klartext)
+            else mine.forEach { saveApp(it.copy(tunnelId = null, alwaysTunnel = false, guest = null, action = Guest.dropSealed(it.action))) }
+            if (last && inv != null) Guest.forgetInvite(ctx, inv)
             Thread { runCatching { Wgbridge.stopTunnel(id) } }.start()
-            return
+            return if (withApps) mine.map { it.id } else emptyList()
         }
-        apps().filter { it.tunnelId == id }.forEach { saveApp(it.copy(tunnelId = null)) }
+        val mine = apps().filter { it.tunnelId == id }
+        if (withApps) mine.forEach { deleteApp(it.id) }
+        else mine.forEach { saveApp(it.copy(tunnelId = null, alwaysTunnel = false)) }
         // Go stoppt den Tunnel (wartet einen laufenden Tailscale-Start ab) und loescht erst dann den
         // Ordner, sonst schriebe der Knoten weiter hinein. Kann kurz blockieren -> nicht im Main-Thread
         val dir = tailscaleDir(id)
         Thread {
             runCatching { Wgbridge.removeTailscale(id, dir.path) }.onFailure { dir.deleteRecursively() }
         }.start()
+        return if (withApps) mine.map { it.id } else emptyList()
     }
+
+    /** Eintraege, die mit dieser Verbindung geloescht wuerden bzw. ohne Tunnel blieben. */
+    fun appsOfTunnel(t: Tunnel): List<WebApp> {
+        val inv = if (t.isGuest) inviteOf(t) else null
+        val last = inv == null || tunnels().none { it.id != t.id && it.isGuest && inviteOf(it) == inv }
+        return apps().filter { it.tunnelId == t.id || (last && inv != null && it.guest == inv && it.tunnelId == null) }
+    }
+
+    private fun inviteOf(t: Tunnel) = runCatching { JSONObject(t.config).getString("inv") }.getOrNull()
 
     /** Gastzugang auf diesem Handy ganz entfernen: alle Eintraege dieser Einladung, ihre Verbindung, Geraeteschluessel. */
     fun deleteGuestAccess(inviteId: String) {
         tunnels().filter { it.isGuest && runCatching { JSONObject(it.config).getString("inv") }.getOrNull() == inviteId }
-            .forEach { deleteTunnel(it.id) }
+            .forEach { deleteTunnel(it.id, withApps = true) }
         apps().filter { it.guest == inviteId }.forEach { deleteApp(it.id) }
         Guest.forgetInvite(ctx, inviteId)
     }

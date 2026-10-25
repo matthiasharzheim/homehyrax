@@ -274,10 +274,8 @@ object Guest {
         }
     }
 
-    /** Geraeteschluessel einer geloeschten Gast-Verbindung entfernen. */
-    fun forgetDevice(t: Tunnel) {
-        runCatching { forgetInvite(ctxFree = null, JSONObject(t.config).getString("inv")) }
-    }
+    /** Versiegeltes Passwort entfernen: ohne Gastzugang gibt es K nicht mehr (Eintrag wird ein eigener ohne Passwort). */
+    fun dropSealed(a: ShellyAction?): ShellyAction? = a?.let { if (it.pass.startsWith(SEALED)) it.copy(pass = "") else it }
 
     /** Geraeteschluessel (und gemerkten Zustand) einer Einladung entfernen. */
     fun forgetInvite(ctxFree: Context?, inviteId: String) {

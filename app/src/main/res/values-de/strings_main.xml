@@ -134,7 +134,13 @@
     <string name="main_connect">Verbinden</string>
     <string name="main_connected">Verbunden</string>
     <string name="main_connected_as">Verbunden als %1$s</string>
-    <string name="main_delete_tunnel_text">Einträge, die sie nutzen, funktionieren danach nur noch im Heim-WLAN.</string>
+    <string name="main_delete_tunnel_empty">Keine Einträge nutzen diese Verbindung.</string>
+    <string name="main_delete_tunnel_keep">Kacheln behalten</string>
+    <string name="main_delete_tunnel_all">Kacheln mit löschen</string>
+    <plurals name="main_delete_tunnel_ask">
+        <item quantity="one">1 Kachel nutzt diese Verbindung. Auch löschen?\n\nBehaltene Kacheln funktionieren ohne VPN (nur im selben WLAN) und lassen sich im Editor einer anderen Verbindung zuordnen.</item>
+        <item quantity="other">%d Kacheln nutzen diese Verbindung. Auch alle Kacheln dieser Verbindung löschen?\n\nBehaltene Kacheln funktionieren ohne VPN (nur im selben WLAN) und lassen sich im Editor einer anderen Verbindung zuordnen.</item>
+    </plurals>
     <string name="main_tunnel_default_name">Zuhause</string>
     <string name="main_tunnel_ts_default_name">Tailscale</string>
     <string name="main_shelly_gen2">Gen2 / Plus / Pro / Gen3</string>
@@ -216,7 +222,6 @@
     <string name="guest_tile">Gast</string>
     <string name="guest_no_edit">Gast-Einträge gehören dem Besitzer und lassen sich nicht bearbeiten.</string>
     <string name="guest_tunnel_sub">Gastzugang – der Besitzer kann ihn sperren</string>
-    <string name="guest_delete_tunnel_text">Die Einträge dieses Gastzugangs werden mit gelöscht.</string>
     <string name="guest_checking">Einladung wird geprüft …</string>
     <string name="guest_accept_title">Gastzugang übernehmen?</string>
     <string name="guest_device">Gerät %1$s</string>

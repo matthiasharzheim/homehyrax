@@ -134,7 +134,13 @@
     <string name="main_connect">Connect</string>
     <string name="main_connected">Connected</string>
     <string name="main_connected_as">Connected as %1$s</string>
-    <string name="main_delete_tunnel_text">Entries using it will then only work on home Wi-Fi.</string>
+    <string name="main_delete_tunnel_empty">No entries use this connection.</string>
+    <string name="main_delete_tunnel_keep">Keep tiles</string>
+    <string name="main_delete_tunnel_all">Delete tiles too</string>
+    <plurals name="main_delete_tunnel_ask">
+        <item quantity="one">1 tile uses this connection. Delete it too?\n\nKept tiles work without VPN (on the same Wi-Fi only) and can be assigned to another connection in the editor.</item>
+        <item quantity="other">%d tiles use this connection. Delete all of them too?\n\nKept tiles work without VPN (on the same Wi-Fi only) and can be assigned to another connection in the editor.</item>
+    </plurals>
     <string name="main_tunnel_default_name">Home</string>
     <string name="main_tunnel_ts_default_name">Tailscale</string>
     <string name="main_shelly_gen2">Gen2 / Plus / Pro / Gen3</string>
@@ -216,7 +222,6 @@
     <string name="guest_tile">Guest</string>
     <string name="guest_no_edit">Guest entries belong to their owner and can\'t be edited.</string>
     <string name="guest_tunnel_sub">Guest access – the owner can block it</string>
-    <string name="guest_delete_tunnel_text">The entries of this guest access are deleted too.</string>
     <string name="guest_checking">Checking invitation…</string>
     <string name="guest_accept_title">Accept guest access?</string>
     <string name="guest_device">Device %1$s</string>
