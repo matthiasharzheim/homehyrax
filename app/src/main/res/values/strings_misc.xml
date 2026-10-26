@@ -16,7 +16,7 @@
     <string name="web_cert_message">%1$s uses its own (self-signed) certificate – typical for routers and NAS at home.\n\nTrust this device permanently?</string>
     <string name="web_cert_trust">Trust</string>
     <string name="web_mic_title">Use microphone?</string>
-    <string name="web_mic_message">%1$s wants to record audio.\n\nAllow for this entry? You can turn it off under Edit → Advanced.</string>
+    <string name="web_mic_message">%1$s wants to record audio.\n\nAllow for this entry? You can turn it off under Settings → Advanced.</string>
     <string name="web_mic_allow">Allow</string>
     <string name="web_mic_deny">Deny</string>
     <string name="web_mic_no_permission">Microphone access is turned off for HomeHyrax in the Android settings.</string>

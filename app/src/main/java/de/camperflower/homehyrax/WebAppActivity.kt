@@ -698,7 +698,6 @@ class WebAppActivity : FragmentActivity() {
                 return
             }
             // Kopfzeile case-insensitiv pruefen: Go schreibt sie kanonisiert ("X-Homehyrax-Error").
-            // TODO: auf die Konstante aus dem Go-Kern (voraussichtlich Wgbridge.ErrorHeader) umstellen
             if (request.isForMainFrame && response.responseHeaders?.keys?.any { it.equals(Wgbridge.ErrorHeader, ignoreCase = true) } == true) {
                 awaitingLoad = false
                 val t = tunnel

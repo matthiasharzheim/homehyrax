@@ -1203,7 +1203,7 @@ class MainActivity : FragmentActivity() {
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
                 if (kind == KIND_WEB) {
-                    // Erweitert (aufklappbar): Vollbild, Bildschirm an, Desktop
+                    // Erweitert (aufklappbar): Vollbild, Bildschirm an, Desktop, Mikrofon
                     Row(Modifier.fillMaxWidth().clickable { advanced = !advanced }.padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Tune, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
