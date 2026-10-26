@@ -14,6 +14,13 @@ return [
     'cloud_project' => '',
     'package' => 'de.camperflower.homehyrax',
     'service_account' => __DIR__ . '/play-integrity.json',
+    // 'on' = Push-Benachrichtigungen ueber Firebase Cloud Messaging weiterreichen (braucht firebase + Dienstkonto
+    // mit der Rolle "Firebase Cloud Messaging API Admin"; ohne push_service_account gilt service_account)
+    'push' => 'off',
+    'push_service_account' => __DIR__ . '/play-integrity.json',
+    // aus google-services.json der Android-App (keine Geheimnisse; die App holt sie ueber health)
+    'firebase' => ['project_id' => '', 'app_id' => '', 'api_key' => '', 'sender_id' => ''],
+    'max_push_devices' => 100000,
     'max_invites_per_owner' => 200,
     'max_invites_total' => 100000,
 ];

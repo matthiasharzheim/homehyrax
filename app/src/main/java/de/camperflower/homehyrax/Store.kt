@@ -398,6 +398,14 @@ class Store(private val ctx: Context) {
     // ---- Gastzugaenge, die ich verschickt habe (Besitzer-Seite) ----
     private val invitesFile = File(ctx.filesDir, "invites.json")
     private val ownerFile = File(ctx.filesDir, "owner.key")
+    private val pushFile = File(ctx.filesDir, "push.key")
+
+    /** Push-Schluessel dieses Handys (Keystore-verschluesselt), null = keiner */
+    fun pushKey(): String? = if (!pushFile.exists()) null else runCatching { decrypt(pushFile.readText()) }.getOrNull()
+
+    fun savePushKey(key: String?) {
+        if (key == null) pushFile.delete() else atomicWrite(pushFile, encrypt(key))
+    }
 
     /** Eigene Einladungen: Name des Gastes und Eintraege kennt nur diese App, der Schluesseldienst nicht. */
     fun invites(): List<Invite> = load(invitesFile) { o ->

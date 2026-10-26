@@ -113,7 +113,7 @@
     <string name="main_info_novpn_title">Not a regular VPN</string>
     <string name="main_info_novpn_text">The tunnel runs only inside this app and only for your home addresses. Other apps and the rest of the internet notice nothing – another VPN can run at the same time. After closing, the tunnel shuts down after 90 s.</string>
     <string name="main_info_security_title">Security</string>
-    <string name="main_info_security_text">WireGuard keys and passwords are stored encrypted (Android Keystore), the Tailscale device key in the app\'s protected storage. No logs, no ads, no tracking. Only when sharing via invitation does the app ask our key service – it knows no home addresses and no credentials. Optional fingerprint before opening.</string>
+    <string name="main_info_security_text">WireGuard keys and passwords are stored encrypted (Android Keystore), the Tailscale device key in the app\'s protected storage. No logs, no ads, no tracking. Only when sharing via invitation or with push notifications switched on does the app talk to our key service – it knows no home addresses and no credentials. Optional fingerprint before opening.</string>
     <string name="main_info_contact_title">Contact</string>
     <string name="main_info_contact_text">Questions or change requests? Write to us:</string>
     <string name="main_info_mail">info@camperflower.de</string>
@@ -300,4 +300,29 @@
     <string name="guest_remove">Remove guest access</string>
     <string name="guest_remove_title">Remove guest access?</string>
     <string name="guest_remove_text">Removes all tiles of this guest access from this phone.</string>
+    <!-- Push-Benachrichtigungen -->
+    <string name="push_title">Notifications</string>
+    <string name="push_switch">Push notifications</string>
+    <string name="push_intro">Receive messages from your own server or home automation. Off: no contact with Google. On: delivery via Google Firebase and our key service; message texts are passed through, not stored.</string>
+    <string name="push_err_off">Push notifications are currently not available.</string>
+    <string name="push_err_fcm">Google could not be reached – Google Play services are missing or offline.</string>
+    <string name="push_lost">This push key is no longer valid. Create a new one and give it to your sender.</string>
+    <string name="push_blocked">Notifications are blocked for HomeHyrax.</string>
+    <string name="push_settings">Open settings</string>
+    <string name="push_key_title">Push key</string>
+    <string name="push_key_hint">Anyone who has this key can send notifications to this phone. Only give it to your own sender.</string>
+    <string name="push_copied">Push key copied</string>
+    <string name="push_share">Share</string>
+    <string name="push_test">Send test notification</string>
+    <string name="push_test_title">HomeHyrax test</string>
+    <string name="push_test_body">Push notifications work.</string>
+    <string name="push_test_sent">Sent – one notification per channel (Urgent, Messages) should arrive in a few seconds.</string>
+    <string name="push_renew">New push key</string>
+    <string name="push_renew_confirm">The old key stops working. Give the new one to your sender.</string>
+    <string name="push_help">How to send notifications</string>
+    <string name="push_help_url">https://homehyrax.com/#push</string>
+    <string name="push_channel_urgent">Urgent</string>
+    <string name="push_channel_urgent_desc">Messages marked urgent by your sender</string>
+    <string name="push_channel_normal">Messages</string>
+    <string name="push_channel_normal_desc">Other messages from your sender</string>
 </resources>

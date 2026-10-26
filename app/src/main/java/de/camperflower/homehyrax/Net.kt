@@ -39,6 +39,7 @@ class HomeHyraxApp : Application() {
         store = Store(this)
         CrashLog.install(this)
         Net.init(this)
+        Push.init(this)
     }
 }
 

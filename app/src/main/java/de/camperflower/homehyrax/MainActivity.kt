@@ -141,6 +141,9 @@ import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -220,6 +223,7 @@ class MainActivity : FragmentActivity() {
         data object Import : Page
         data object Licenses : Page
         data object About : Page
+        data object Push : Page
     }
 
     /**
@@ -451,6 +455,7 @@ class MainActivity : FragmentActivity() {
             Page.Import -> ImportPage()
             Page.Licenses -> LicensesPage()
             Page.About -> AboutPage()
+            Page.Push -> PushPage()
         }
     }
 
@@ -488,6 +493,8 @@ class MainActivity : FragmentActivity() {
                                 onClick = { more = false; guard { page = Page.Share } })
                             DropdownMenuItem(text = { Text(stringResource(R.string.main_import_title)) }, leadingIcon = { Icon(Icons.Filled.QrCodeScanner, null) },
                                 onClick = { more = false; page = Page.Import })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.push_title)) }, leadingIcon = { Icon(Icons.Filled.Notifications, null) },
+                                onClick = { more = false; page = Page.Push })
                             DropdownMenuItem(text = { Text(stringResource(R.string.main_menu_info)) }, leadingIcon = { Icon(Icons.Filled.Info, null) },
                                 onClick = { more = false; page = Page.About })
                         }
@@ -1488,6 +1495,154 @@ class MainActivity : FragmentActivity() {
                         runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$mail"))) }
                     }
                     AboutExpand(stringResource(R.string.main_info_imprint_title), stringResource(R.string.main_info_imprint_text))
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    /** Fehler beim Ein-/Ausschalten von Push als kurzer Text */
+    private fun pushMessage(e: Throwable): String = getString(when ((e as? Guest.Failure)?.code) {
+        "push_off", "service_off" -> R.string.push_err_off
+        "fcm" -> R.string.push_err_fcm
+        "network" -> R.string.guest_err_network
+        "rate_limit" -> R.string.guest_err_busy
+        "unknown", "gone" -> R.string.push_lost
+        "muted" -> R.string.push_blocked
+        else -> R.string.guest_err_server
+    })
+
+    /**
+     * Push-Benachrichtigungen: Schalter (Standard aus), Push-Schluessel zum Weitergeben an den eigenen Absender,
+     * Testnachricht. Aus = kein Firebase, kein Kontakt zu Google.
+     */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun PushPage() {
+        val ctx = LocalContext.current
+        val scope = rememberCoroutineScope()
+        var on by remember { mutableStateOf(Push.enabled(ctx)) }
+        var key by remember { mutableStateOf<String?>(null) }
+        var problem by remember { mutableStateOf(Push.problem(ctx)) }
+        var busy by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        var allowed by remember { mutableStateOf(Push.notificationsAllowed(ctx)) }
+        var confirmRenew by remember { mutableStateOf(false) }
+        LaunchedEffect(on) { key = if (on) withContext(Dispatchers.IO) { Push.key(ctx) } else null }
+        // Nur anbieten, was der Schluesseldienst kann (null = noch unbekannt oder nicht erreichbar)
+        val offered by produceState<Boolean?>(null) {
+            value = withContext(Dispatchers.IO) { runCatching { Push.offered(ctx) }.getOrNull() }
+        }
+        // zurueck aus den Android-Einstellungen: Erlaubnis neu lesen
+        DisposableEffect(lifecycle) {
+            val obs = LifecycleEventObserver { _, e ->
+                if (e == Lifecycle.Event.ON_RESUME) {
+                    allowed = Push.notificationsAllowed(ctx)
+                    lifecycleScope.launch(Dispatchers.IO) { Push.refresh(ctx) }   // geaenderte Erlaubnis dem Dienst melden
+                }
+            }
+            lifecycle.addObserver(obs)
+            onDispose { lifecycle.removeObserver(obs) }
+        }
+        val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            allowed = Push.notificationsAllowed(ctx)
+            lifecycleScope.launch(Dispatchers.IO) { Push.refresh(ctx) }
+        }
+
+        fun work(block: suspend () -> Unit) {
+            if (busy) return
+            busy = true; error = null
+            scope.launch {
+                try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { error = pushMessage(e) }
+                finally { busy = false; problem = Push.problem(ctx); if (on) key = withContext(Dispatchers.IO) { Push.key(ctx) } }
+            }
+        }
+
+        fun switch(v: Boolean) = work {
+            if (v) {
+                if (Build.VERSION.SDK_INT >= 33 && !allowed) askPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                key = withContext(Dispatchers.IO) { Push.enable(ctx) }
+                on = true
+            } else {
+                withContext(Dispatchers.IO) { Push.disable(ctx) }
+                on = false
+            }
+        }
+
+        if (confirmRenew) AlertDialog(
+            onDismissRequest = { confirmRenew = false },
+            title = { Text(stringResource(R.string.push_renew)) },
+            text = { Text(stringResource(R.string.push_renew_confirm)) },
+            confirmButton = { TextButton(onClick = { confirmRenew = false; work { key = withContext(Dispatchers.IO) { Push.renew(ctx) } } }) {
+                Text(stringResource(R.string.push_renew)) } },
+            dismissButton = { TextButton(onClick = { confirmRenew = false }) { Text(stringResource(R.string.main_cancel)) } },
+        )
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.push_title)) },
+                    navigationIcon = { IconButton(onClick = { page = Page.Home }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) } },
+                )
+            },
+        ) { pad ->
+            Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconSwitch(Icons.Filled.Notifications, stringResource(R.string.push_switch), on) { switch(it) }
+                Text(stringResource(R.string.push_intro), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (!on && offered == false) Text(stringResource(R.string.push_err_off), color = MaterialTheme.colorScheme.error)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (on && !allowed) {
+                    Text(stringResource(R.string.push_blocked), color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = {
+                        runCatching { startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)) }
+                    }, contentPadding = PaddingValues(0.dp)) { Text(stringResource(R.string.push_settings)) }
+                }
+                if (on && problem == "lost") Text(stringResource(R.string.push_lost), color = MaterialTheme.colorScheme.error)
+                val k = key
+                if (on && k != null) AboutCard(stringResource(R.string.push_key_title)) {
+                    Text(stringResource(R.string.push_key_hint), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Text(k, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+                    Row {
+                        TextButton(onClick = { copySensitive(k); toast(getString(R.string.push_copied)) }, contentPadding = PaddingValues(0.dp)) {
+                            Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.main_copy))
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        TextButton(onClick = {
+                            runCatching { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, k), null)) }
+                        }, contentPadding = PaddingValues(0.dp)) {
+                            Icon(Icons.Filled.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.push_share))
+                        }
+                    }
+                    OutlinedButton(onClick = {
+                        work {
+                            withContext(Dispatchers.IO) { Push.test(ctx, getString(R.string.push_test_title), getString(R.string.push_test_body)) }
+                            toast(getString(R.string.push_test_sent))
+                        }
+                    }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.push_test))
+                    }
+                    TextButton(onClick = { confirmRenew = true }, enabled = !busy, contentPadding = PaddingValues(0.dp)) {
+                        Icon(Icons.Filled.Refresh, null, Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.push_renew))
+                    }
+                }
+                // ohne gueltigen Schluessel (verloren oder Erneuern gescheitert): neuen erzeugen
+                if (on && k == null && !busy) OutlinedButton(onClick = { confirmRenew = true }) {
+                    Text(stringResource(R.string.push_renew))
+                }
+                val web = stringResource(R.string.push_help_url)
+                AboutLink(Icons.AutoMirrored.Filled.MenuBook, stringResource(R.string.push_help), web.removePrefix("https://")) {
+                    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(web))) }
                 }
                 Spacer(Modifier.height(24.dp))
             }

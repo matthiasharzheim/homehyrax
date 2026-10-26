@@ -61,6 +61,21 @@ object Guest {
         return (if (ok) "ok" else "down") to base
     }
 
+    /** Antwort von health (Projektnummer, Firebase-Angaben fuer Push ...). Netzwerk -> Hintergrund */
+    fun healthInfo(ctx: Context): JSONObject {
+        val text = try {
+            val c = URL(server(ctx) + "health").openConnection() as HttpURLConnection
+            c.connectTimeout = 5000; c.readTimeout = 5000; c.instanceFollowRedirects = false
+            try { c.inputStream.use { it.readAtMost(4096).decodeToString() } } finally { c.disconnect() }
+        } catch (e: IOException) {
+            throw Failure("network")
+        }
+        return runCatching { JSONObject(text) }.getOrElse { throw Failure("server") }
+    }
+
+    /** Anfrage ohne Geraete-Signatur (Push). Fehler als Failure wie bei den Einladungen */
+    fun request(ctx: Context, action: String, body: JSONObject): JSONObject = call(ctx, action, body, sign = null)
+
     /**
      * Schluesseldienst abgeschaltet: Vollzugriff dann ohne ihn anbieten (Rueckfallebene). Nur bei ausdruecklichem
      * "service_off" - ein blosser Netzfehler (z. B. per DNS-Sperre erzwingbar) bietet keinen dauerhaften Export an.
@@ -438,17 +453,10 @@ object Guest {
     private var integrityProject = 0L
 
     /** Cloud-Projektnummer meldet der Schluesseldienst (health) - so laesst sie sich ohne App-Update setzen */
-    private fun cloudProject(ctx: Context): Long {
-        val text = try {
-            val c = URL(server(ctx) + "health").openConnection() as HttpURLConnection
-            c.connectTimeout = 5000; c.readTimeout = 5000; c.instanceFollowRedirects = false
-            try { c.inputStream.use { it.readAtMost(4096).decodeToString() } } finally { c.disconnect() }
-        } catch (e: IOException) {
-            throw Failure("network")   // nur das Netz weg - nicht "Geraet nicht zugelassen" melden
-        }
-        return runCatching { JSONObject(text).optString("project").toLongOrNull() }.getOrNull()?.takeIf { it > 0 }
+    private fun cloudProject(ctx: Context): Long =
+        // Netzfehler bleibt "network" - nicht "Geraet nicht zugelassen" melden
+        healthInfo(ctx).optString("project").toLongOrNull()?.takeIf { it > 0 }
             ?: throw Failure("server")   // Schluesseldienst falsch eingestellt (keine Projektnummer)
-    }
 
     /**
      * Versiegelter Nachweis von Google: echte HomeHyrax aus dem Play Store auf einem echten Geraet, gebunden an hash.

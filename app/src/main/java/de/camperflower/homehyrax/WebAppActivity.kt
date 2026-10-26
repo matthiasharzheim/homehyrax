@@ -138,6 +138,8 @@ class WebAppActivity : FragmentActivity() {
     private var fallbackTried = false
     private var proxyAuthTries = 0
     private var loadedOnce = false
+    /** Adresse aus einer Benachrichtigung (gleicher Ursprung wie der Eintrag): beim naechsten Laden statt der Startseite */
+    private var startUrl: String? = null
     private var awaitingLoad = false
 
     // optionale Sperre (Fingerabdruck/Gesicht/PIN)
@@ -229,6 +231,9 @@ class WebAppActivity : FragmentActivity() {
         }
         app = a
         tunnel = store.tunnel(app.tunnelId)
+        // nur beim ersten Start: nach recreate()/Wiederherstellen nicht erneut dieselbe Adresse laden
+        if (savedInstanceState == null) startUrl = pushUrl(intent)
+        intent.removeExtra(EXTRA_START_URL)
         setTaskDescription(ActivityManager.TaskDescription(app.name, Shortcuts.roundIcon(this, app)))
         if (app.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         goFullscreen()
@@ -264,8 +269,21 @@ class WebAppActivity : FragmentActivity() {
         when {
             fresh == null -> { Toast.makeText(this, getString(R.string.web_gone), Toast.LENGTH_LONG).show(); finishAndRemoveTask() }
             fresh != app -> recreate()
+            else -> pushUrl(intent).also { intent.removeExtra(EXTRA_START_URL) }?.let { url ->
+                // geladen und entsperrt: gleich dorthin, sonst beim naechsten Laden bzw. nach dem Entsperren
+                if (loadedOnce && !locked && phase !is Phase.Connecting) web.loadUrl(url) else startUrl = url
+            }
         }
     }
+
+    /** Adresse aus einer Benachrichtigung, nur wenn sie zum Eintrag gehoert (Schema, Host, Port) */
+    private fun pushUrl(i: Intent?): String? = i?.getStringExtra(EXTRA_START_URL)
+        ?.takeIf { Push.safeUrl(it) && MainActivity.sameOrigin(app.url, it) }
+        ?.let { u ->
+            // gleiche Seite ohne eigene Parameter: Startadresse des Eintrags (behaelt z. B. dessen ?k=...)
+            val p = Uri.parse(u)
+            if (p.query == null && p.fragment == null && p.path.orEmpty().trimEnd('/') == Uri.parse(app.url).path.orEmpty().trimEnd('/')) app.url else u
+        }
 
     /** Sperre aufheben; beim ersten Mal danach verbinden + laden. */
     private fun unlock() {
@@ -277,6 +295,7 @@ class WebAppActivity : FragmentActivity() {
                     Net.webAppVisible(true, app)   // erst entsperrt: Ziel fuer den Proxy-Ausweichmodus freigeben
                     if (!startedOnce) { startedOnce = true; lifecycleScope.launch { start() } }
                     else if (refreshAfterUnlock) { refreshAfterUnlock = false; retry() }
+                    else startUrl?.let { startUrl = null; web.loadUrl(it) }
                 }
                 err == null -> finishAndRemoveTask()   // abgebrochen
                 else -> lockError = err
@@ -355,7 +374,9 @@ class WebAppActivity : FragmentActivity() {
     private fun load() {
         phase = Phase.Connecting(getString(if (viaTunnel) R.string.web_loading_tunnel else R.string.web_loading))
         awaitingLoad = true
-        if (loadedOnce) web.reload() else web.loadUrl(app.url)
+        val target = startUrl
+        startUrl = null
+        if (target != null) web.loadUrl(target) else if (loadedOnce) web.reload() else web.loadUrl(app.url)
         loadedOnce = true
     }
 
@@ -961,6 +982,8 @@ class WebAppActivity : FragmentActivity() {
     }
 
     companion object {
+        /** Adresse innerhalb des Eintrags, die geoeffnet werden soll (Benachrichtigung) */
+        const val EXTRA_START_URL = "start_url"
         private const val RELOCK_MS = 60_000L
         private const val MENU_SICHTBAR_MS = 4_000L
         /** Abstand der beiden Wischer fuer das Menue */

@@ -15,6 +15,10 @@ const HOUSEKEEPING_EVERY = 600;
 const UNOPENED_MAX = 180 * 86400;
 const IDLE_MAX = 365 * 86400;    // geoeffnete Einladungen, die so lange nicht genutzt wurden, werden geloescht
 const MAX_BODY = 16384;
+const PUSH_PER_DEVICE = 120;     // Push-Nachrichten je Geraet und Stunde
+const PUSH_REGISTER_PER_DAY = 50;  // neue Push-Anmeldungen je Adresse und Tag
+const PUSH_UNUSED_MAX = 90 * 86400;  // nie benutzte Anmeldung ohne Lebenszeichen
+const PUSH_MAX_BYTES = 3500;     // Titel + Text + Adresse; FCM nimmt hoechstens 4096 Byte Nutzdaten
 
 final class Fail extends \Exception
 {
@@ -29,7 +33,7 @@ final class Service
 {
     // Anfragen je Adresse (IPv6: je /64) und Stunde; create zusaetzlich je Tag, integrity = Aufrufe bei Google
     private const LIMITS = ['create' => 30, 'bind' => 30, 'key' => 1200, 'manage' => 600, 'info' => 600,
-                            'integrity' => 60];
+                            'integrity' => 60, 'push-register' => 30, 'push' => 600, 'push-delete' => 60];
     private const CREATE_PER_DAY = 100;
 
     /** @var \Closure(): int */
@@ -42,8 +46,11 @@ final class Service
      * @param array $cfg siehe config.example.php
      * @param null|\Closure(string $token, string $requestHash): ?string $integrity null = Pruefung aus;
      *        liefert null bei Erfolg, sonst einen Fehlertext
+     * @param null|\Closure(string $token, array $data, bool $urgent, bool $validateOnly): string $push null = Push aus;
+     *        stellt eine Nachricht zu (validateOnly: prueft nur das Token), liefert 'ok', 'gone' oder 'error' (push.php)
      */
-    public function __construct(private \PDO $db, private array $cfg, private ?\Closure $integrity)
+    public function __construct(private \PDO $db, private array $cfg, private ?\Closure $integrity,
+                                private ?\Closure $push = null)
     {
         $this->clock = static fn(): int => time();
         $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -57,6 +64,11 @@ final class Service
         $this->db->exec('CREATE TABLE IF NOT EXISTS nonces (n TEXT PRIMARY KEY, ts INTEGER NOT NULL)');
         $this->db->exec('CREATE TABLE IF NOT EXISTS hits (k TEXT PRIMARY KEY, win INTEGER NOT NULL, n INTEGER NOT NULL)');
         $this->db->exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+        // Push: Geraet = Zufalls-id + Hash des Geheimnisses; das FCM-Token liegt verschluesselt (master_key)
+        $this->db->exec('CREATE TABLE IF NOT EXISTS push_devices (
+            id TEXT PRIMARY KEY, secret_hash TEXT NOT NULL, device_hash TEXT NOT NULL, token_enc TEXT NOT NULL,
+            created INTEGER NOT NULL,
+            updated INTEGER NOT NULL, last_push INTEGER, gone INTEGER, active INTEGER NOT NULL DEFAULT 1)');
         if (strlen($this->masterKey()) !== SODIUM_CRYPTO_SECRETBOX_KEYBYTES) {
             throw new \RuntimeException('master_key must be 32 bytes (base64)');
         }
@@ -71,11 +83,19 @@ final class Service
                 $h = ['ok' => true, 'api' => API, 'integrity' => $this->integrity !== null];
                 // Cloud-Projektnummer fuer die Echtheitspruefung: die App holt sie hier (kein App-Update noetig)
                 if ($this->integrity !== null) $h['project'] = (string)($this->cfg['cloud_project'] ?? '');
+                // Firebase-Angaben fuer die App (kein Geheimnis): ohne sie bietet die App keine Push-Nachrichten an
+                if ($this->push !== null) {
+                    $f = $this->cfg['firebase'] ?? [];
+                    $h['push'] = ['project' => (string)($f['project_id'] ?? ''), 'app' => (string)($f['app_id'] ?? ''),
+                                  'key' => (string)($f['api_key'] ?? ''), 'sender' => (string)($f['sender_id'] ?? '')];
+                }
                 return [200, $h];
             }
             $action = match ($path) {
                 '/v1/create' => 'create', '/v1/bind' => 'bind', '/v1/key' => 'key',
-                '/v1/manage' => 'manage', '/v1/info' => 'info', default => null,
+                '/v1/manage' => 'manage', '/v1/info' => 'info',
+                '/v1/push-register' => 'push-register', '/v1/push' => 'push', '/v1/push-delete' => 'push-delete',
+                default => null,
             };
             if ($action === null) throw new Fail(404, 'not_found');
             if ($method !== 'POST') throw new Fail(405, 'method');
@@ -86,7 +106,10 @@ final class Service
             $this->hitKeys = [];
             $this->limit($action, self::LIMITS[$action], 3600);
             $this->housekeepingDue();
-            return [200, $this->$action($in)];
+            return [200, match ($action) {
+                'push-register' => $this->pushRegister($in), 'push' => $this->pushSend($in),
+                'push-delete' => $this->pushDelete($in), default => $this->$action($in),
+            }];
         } catch (Fail $f) {
             // Rueckfrage nach dem Google-Nachweis: die App wiederholt gleich mit Nachweis -> nicht doppelt zaehlen
             if ($f->error === 'integrity_required') $this->unlimit();
@@ -215,6 +238,120 @@ final class Service
         return ['invites' => $out, 'now' => $this->now()];
     }
 
+    // ---- Push-Benachrichtigungen ----
+
+    /**
+     * App meldet ihr FCM-Token. Neu: liefert den Push-Schluessel "<id>.<geheimnis>" (fuer Absender, kann nur senden)
+     * und das Geraete-Geheimnis "<id>.<geheimnis2>" (bleibt in der App: Token aendern, abmelden). Mit `device`: Token
+     * aktualisieren (neues Token von Google, regelmaessiges Lebenszeichen).
+     */
+    private function pushRegister(array $in): array
+    {
+        $this->pushOn();
+        $token = $in['token'] ?? null;
+        if (!is_string($token) || strlen($token) < 20 || strlen($token) > 4096 || !preg_match('/^[A-Za-z0-9:_.-]+$/', $token)) {
+            throw new Fail(400, 'token');
+        }
+        // false = auf dem Handy sind Benachrichtigungen blockiert -> Absender bekommt "muted" (kann anders melden)
+        $active = ($in['active'] ?? true) === false ? 0 : 1;
+        if (isset($in['device'])) {
+            $dev = $this->pushDevice($in, 'device');
+            // neues Token bei Google pruefen (gleiches wie gespeichert: nicht noch einmal)
+            if (!hash_equals($this->open($dev['token_enc']), $token)) $this->checkToken($token);
+            $this->db->prepare('UPDATE push_devices SET token_enc = ?, updated = ?, gone = NULL, active = ? WHERE id = ?')
+                ->execute([$this->seal($token), $this->now(), $active, $dev['id']]);
+            return ['ok' => true];
+        }
+        // Anmeldungen kosten Platz: je Adresse und Tag begrenzt, nur echte Token (Google prueft), Gesamtgrenze
+        $this->limit('push-register-day', PUSH_REGISTER_PER_DAY, 86400);
+        if ((int)$this->db->query('SELECT COUNT(*) FROM push_devices')->fetchColumn()
+            >= (int)($this->cfg['max_push_devices'] ?? 100000)) {
+            throw new Fail(503, 'full');
+        }
+        $this->checkToken($token);
+        $id = b64u(random_bytes(16));
+        $secret = b64u(random_bytes(32));
+        $device = b64u(random_bytes(32));
+        $this->db->prepare('INSERT INTO push_devices (id, secret_hash, device_hash, token_enc, created, updated, active)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$id, hash('sha256', $secret), hash('sha256', $device), $this->seal($token), $this->now(),
+                       $this->now(), $active]);
+        return ['key' => "$id.$secret", 'device' => "$id.$device"];
+    }
+
+    /** Token bei Google nur pruefen (validate_only): ungueltig -> 400; ist Google gerade nicht erreichbar, gilt es */
+    private function checkToken(string $token): void
+    {
+        if (($this->push)($token, [], false, true) === 'gone') throw new Fail(400, 'token');
+    }
+
+    /** Nachricht an das Geraet mit diesem Push-Schluessel */
+    private function pushSend(array $in): array
+    {
+        $this->pushOn();
+        $dev = $this->pushDevice($in);
+        $ch = $in['ch'] ?? 'normal';
+        if ($ch !== 'urgent' && $ch !== 'normal') throw new Fail(400, 'ch');
+        $title = self::text($in, 'title', 120, true);
+        $body = self::text($in, 'body', 2000, false);
+        $url = self::text($in, 'url', 1000, false);
+        // keine Backslashes, kein @: Android und Browser sollen denselben Host lesen
+        if ($url !== '' && !preg_match('#^https?://[^\s\\\\@]+$#i', $url)) throw new Fail(400, 'url');
+        if (strlen($title) + strlen($body) + strlen($url) > PUSH_MAX_BYTES) throw new Fail(400, 'too_long');
+        if ($dev['gone'] !== null) throw new Fail(410, 'gone');
+        if ((int)$dev['active'] === 0) throw new Fail(409, 'muted');
+        $this->limit('push-device', PUSH_PER_DEVICE, 3600, 'push:' . $dev['id']);
+        $res = ($this->push)($this->open($dev['token_enc']), ['ch' => $ch, 'title' => $title, 'body' => $body, 'url' => $url],
+                             $ch === 'urgent', false);
+        if ($res === 'gone') {
+            $this->db->prepare('UPDATE push_devices SET gone = ? WHERE id = ?')->execute([$this->now(), $dev['id']]);
+            throw new Fail(410, 'gone');
+        }
+        if ($res !== 'ok') throw new Fail(502, 'push_failed');
+        $this->db->prepare('UPDATE push_devices SET last_push = ? WHERE id = ?')->execute([$this->now(), $dev['id']]);
+        return ['ok' => true];
+    }
+
+    /** App schaltet Push aus: Geraet vergessen (nur mit dem Geraete-Geheimnis, nicht mit dem Push-Schluessel) */
+    private function pushDelete(array $in): array
+    {
+        $dev = $this->pushDevice($in, 'device');
+        $this->db->prepare('DELETE FROM push_devices WHERE id = ?')->execute([$dev['id']]);
+        return ['ok' => true];
+    }
+
+    private function pushOn(): void
+    {
+        if ($this->push === null) throw new Fail(503, 'push_off');
+    }
+
+    /**
+     * Geraet zum Push-Schluessel (field 'key', darf senden) bzw. zum Geraete-Geheimnis ('device', darf aendern und
+     * abmelden); falsches Geheimnis und unbekannte id sehen gleich aus
+     */
+    private function pushDevice(array $in, string $field = 'key'): array
+    {
+        $v = $in[$field] ?? null;
+        if (!is_string($v) || !preg_match('/^([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/', $v, $m)) {
+            throw new Fail(400, $field);
+        }
+        $st = $this->db->prepare('SELECT * FROM push_devices WHERE id = ?');
+        $st->execute([$m[1]]);
+        $r = $st->fetch(\PDO::FETCH_ASSOC);
+        $hash = $field === 'device' ? 'device_hash' : 'secret_hash';
+        if (!$r || !hash_equals((string)$r[$hash], hash('sha256', $m[2]))) throw new Fail(404, 'unknown');
+        return $r;
+    }
+
+    private static function text(array $in, string $name, int $max, bool $required): string
+    {
+        $v = $in[$name] ?? '';
+        if (!is_string($v) || !mb_check_encoding($v, 'UTF-8') || mb_strlen($v) > $max || $required && trim($v) === '') {
+            throw new Fail(400, $name);
+        }
+        return $v;
+    }
+
     // ---- Pruefungen ----
 
     private function now(): int
@@ -316,11 +453,14 @@ final class Service
         if ($err !== null) throw new Fail(403, 'integrity', ['reason' => $err]);
     }
 
-    /** Zaehlt Anfragen je Adresse und Zeitfenster; gespeichert wird nur ein gesalzener Hash, bis Fensterende */
-    private function limit(string $bucket, int $max, int $period): void
+    /**
+     * Zaehlt Anfragen je Adresse (oder je subject, z. B. Push-Geraet) und Zeitfenster; gespeichert wird nur ein
+     * gesalzener Hash, bis Fensterende
+     */
+    private function limit(string $bucket, int $max, int $period, ?string $subject = null): void
     {
         $end = (intdiv($this->now(), $period) + 1) * $period;
-        $k = hash('sha256', ($this->cfg['ip_salt'] ?? '') . '|' . ipBucket($this->ip) . "|$bucket|$end");
+        $k = hash('sha256', ($this->cfg['ip_salt'] ?? '') . '|' . ($subject ?? ipBucket($this->ip)) . "|$bucket|$end");
         $this->db->prepare('INSERT INTO hits (k, win, n) VALUES (?, ?, 1)
                             ON CONFLICT(k) DO UPDATE SET n = n + 1')->execute([$k, $end]);
         $this->hitKeys[] = $k;
@@ -359,6 +499,12 @@ final class Service
         // CAST: COALESCE hat keine Spalten-Affinitaet, sonst vergleicht SQLite Zahl < Text (immer wahr = alles weg)
         $this->db->prepare('DELETE FROM invites WHERE pubkey IS NOT NULL AND COALESCE(last_used, bound_at) < CAST(? AS INTEGER)')
             ->execute([$now - IDLE_MAX]);
+        // Push-Geraete: die App meldet sich mindestens woechentlich, solange sie benutzt wird; ein Jahr ohne
+        // Lebenszeichen und ohne Nachricht -> weg, nie benutzte ohne Lebenszeichen nach 90 Tagen. Von Google
+        // abgemeldete Token nach 30 Tagen (CAST wie oben)
+        $this->db->prepare('DELETE FROM push_devices WHERE MAX(updated, COALESCE(last_push, 0)) < CAST(? AS INTEGER)
+                            OR last_push IS NULL AND updated < CAST(? AS INTEGER) OR gone < CAST(? AS INTEGER)')
+            ->execute([$now - IDLE_MAX, $now - PUSH_UNUSED_MAX, $now - PURGE_AFTER]);
     }
 
     // ---- Verschluesselung der gespeicherten Schluessel ----
@@ -453,7 +599,12 @@ function serve(string $home): void
             require_once __DIR__ . '/integrity.php';
             $integrity = \Closure::fromCallable(new PlayIntegrity($cfg, $db));
         }
-        $svc = new Service($db, $cfg, $integrity);
+        $push = null;
+        if (($cfg['push'] ?? 'off') === 'on') {
+            require_once __DIR__ . '/push.php';
+            $push = \Closure::fromCallable(new Fcm($cfg, $db));
+        }
+        $svc = new Service($db, $cfg, $integrity, $push);
         $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
         $path = (string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
         if ($base !== '' && str_starts_with($path, $base)) $path = substr($path, strlen($base));

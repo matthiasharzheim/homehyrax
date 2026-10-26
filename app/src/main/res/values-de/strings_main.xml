@@ -113,7 +113,7 @@
     <string name="main_info_novpn_title">Kein normales VPN</string>
     <string name="main_info_novpn_text">Der Tunnel läuft nur in dieser App und nur für deine Heim-Adressen. Andere Apps und das restliche Internet merken nichts – ein anderes VPN kann gleichzeitig laufen. Nach dem Schließen baut sich der Tunnel nach 90 s ab.</string>
     <string name="main_info_security_title">Sicherheit</string>
-    <string name="main_info_security_text">WireGuard-Schlüssel und Passwörter liegen verschlüsselt (Android-Keystore), der Tailscale-Geräteschlüssel im geschützten App-Speicher. Keine Logs, keine Werbung, kein Tracking. Nur beim Teilen über Einladung fragt die App unseren Schlüsseldienst – er kennt keine Heimnetz-Adressen und keine Zugangsdaten. Auf Wunsch Fingerabdruck vor dem Öffnen.</string>
+    <string name="main_info_security_text">WireGuard-Schlüssel und Passwörter liegen verschlüsselt (Android-Keystore), der Tailscale-Geräteschlüssel im geschützten App-Speicher. Keine Logs, keine Werbung, kein Tracking. Nur beim Teilen über Einladung und bei eingeschalteten Push-Benachrichtigungen spricht die App mit unserem Schlüsseldienst – er kennt keine Heimnetz-Adressen und keine Zugangsdaten. Auf Wunsch Fingerabdruck vor dem Öffnen.</string>
     <string name="main_info_contact_title">Kontakt</string>
     <string name="main_info_contact_text">Fragen oder Änderungswünsche? Schreib uns:</string>
     <string name="main_info_mail">info@camperflower.de</string>
@@ -300,4 +300,29 @@
     <string name="guest_remove">Gastzugang entfernen</string>
     <string name="guest_remove_title">Gastzugang entfernen?</string>
     <string name="guest_remove_text">Entfernt alle Kacheln dieses Gastzugangs von diesem Handy.</string>
+    <!-- Push-Benachrichtigungen -->
+    <string name="push_title">Benachrichtigungen</string>
+    <string name="push_switch">Push-Benachrichtigungen</string>
+    <string name="push_intro">Nachrichten von deinem eigenen Server oder deiner Hausautomation empfangen. Aus: kein Kontakt zu Google. An: Zustellung über Google Firebase und unseren Schlüsseldienst; Nachrichtentexte werden durchgereicht, nicht gespeichert.</string>
+    <string name="push_err_off">Push-Benachrichtigungen sind gerade nicht verfügbar.</string>
+    <string name="push_err_fcm">Google nicht erreichbar – Google-Play-Dienste fehlen oder sind offline.</string>
+    <string name="push_lost">Dieser Push-Schlüssel gilt nicht mehr. Neuen erzeugen und dem Absender geben.</string>
+    <string name="push_blocked">Benachrichtigungen sind für HomeHyrax blockiert.</string>
+    <string name="push_settings">Einstellungen öffnen</string>
+    <string name="push_key_title">Push-Schlüssel</string>
+    <string name="push_key_hint">Wer diesen Schlüssel hat, kann diesem Handy Benachrichtigungen schicken. Nur an deinen eigenen Absender geben.</string>
+    <string name="push_copied">Push-Schlüssel kopiert</string>
+    <string name="push_share">Teilen</string>
+    <string name="push_test">Testnachricht senden</string>
+    <string name="push_test_title">HomeHyrax-Test</string>
+    <string name="push_test_body">Push-Benachrichtigungen funktionieren.</string>
+    <string name="push_test_sent">Gesendet – je eine Nachricht in „Dringend“ und „Mitteilungen“ kommt in wenigen Sekunden.</string>
+    <string name="push_renew">Neuer Push-Schlüssel</string>
+    <string name="push_renew_confirm">Der alte Schlüssel gilt dann nicht mehr. Den neuen dem Absender geben.</string>
+    <string name="push_help">So schickst du Benachrichtigungen</string>
+    <string name="push_help_url">https://homehyrax.com/de/#push</string>
+    <string name="push_channel_urgent">Dringend</string>
+    <string name="push_channel_urgent_desc">Nachrichten, die dein Absender als dringend schickt</string>
+    <string name="push_channel_normal">Mitteilungen</string>
+    <string name="push_channel_normal_desc">Weitere Nachrichten deines Absenders</string>
 </resources>

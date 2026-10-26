@@ -11,6 +11,7 @@ object Licenses {
         "AndroidX (Core, Activity, Fragment, Lifecycle, WebKit, Biometric)" to "https://developer.android.com/jetpack/androidx",
         "Jetpack Compose + Material 3 + Material Icons" to "https://developer.android.com/jetpack/compose",
         "AndroidX Media3 (ExoPlayer, RTSP)" to "https://github.com/androidx/media",
+        "Firebase Cloud Messaging (optional push notifications)" to "https://github.com/firebase/firebase-android-sdk",
         "Kotlin standard library + coroutines" to "https://kotlinlang.org",
         "ZXing (QR-Codes)" to "https://github.com/zxing/zxing",
         "ZXing Android Embedded" to "https://github.com/journeyapps/zxing-android-embedded",

@@ -460,6 +460,223 @@ try {
 check('Google-Zugang zwischengespeichert', count(array_filter($g->calls, fn($u) => str_contains($u, 'oauth2'))) === 1, $g->calls);
 unlink($saFile);
 
+// --- Push-Benachrichtigungen ---
+$sent = [];
+$fcmResult = 'ok';
+$validated = [];
+$fcm = function (string $token, array $data, bool $urgent, bool $validateOnly) use (&$sent, &$fcmResult, &$validated): string {
+    if ($validateOnly) {
+        $validated[] = $token;
+        return str_contains($token, 'FALSCH') ? 'gone' : 'ok';
+    }
+    $sent[] = [$token, $data, $urgent];
+    return $fcmResult;
+};
+$fb = ['project_id' => 'camperflower', 'app_id' => '1:800000000000:android:abc', 'api_key' => 'AIzaTest', 'sender_id' => '800000000000'];
+$tp = new T();
+$ppdo = new PDO('sqlite::memory:');
+$tp->svc = new Service($ppdo, ['master_key' => base64_encode(random_bytes(32)), 'ip_salt' => 'x', 'firebase' => $fb], null,
+                       Closure::fromCallable($fcm));
+$tp->svc->clock = fn(): int => $tp->now;
+[$s, $r] = $tp->call('/v1/health', [], 'GET');
+check('health nennt Firebase-Angaben', $s === 200 && $r['push'] === ['project' => 'camperflower', 'app' => $fb['app_id'],
+    'key' => 'AIzaTest', 'sender' => '800000000000'], $r);
+[$s, $r] = $t->call('/v1/health', [], 'GET');
+check('health ohne Push nennt nichts', $s === 200 && !isset($r['push']), $r);
+[$s, $r] = $t->call('/v1/push-register', ['token' => str_repeat('a', 40)]);
+check('Push aus -> push_off', $s === 503 && $r['error'] === 'push_off', $r);
+
+$fcmTok = 'fcm:' . str_repeat('A', 140);
+[$s, $r] = $tp->call('/v1/push-register', ['token' => 'kurz']);
+check('Token-Form geprueft', $s === 400 && $r['error'] === 'token', $r);
+[$s, $r] = $tp->call('/v1/push-register', ['token' => $fcmTok . '<script>']);
+check('Token-Zeichen geprueft', $s === 400 && $r['error'] === 'token', $r);
+[$s, $r] = $tp->call('/v1/push-register', ['token' => 'fcm:FALSCH' . str_repeat('A', 40)]);
+check('Token von Google abgelehnt -> 400', $s === 400 && $r['error'] === 'token', $r);
+[$s, $reg] = $tp->call('/v1/push-register', ['token' => $fcmTok]);
+check('Push registrieren', $s === 200 && preg_match('/^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/', $reg['key'] ?? '') === 1
+    && preg_match('/^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/', $reg['device'] ?? '') === 1
+    && explode('.', $reg['key'])[0] === explode('.', $reg['device'])[0] && $reg['key'] !== $reg['device'], $reg);
+check('Token bei Google geprueft', end($validated) === $fcmTok, $validated);
+$pkey = $reg['key'];
+$pdev = $reg['device'];
+$row = $ppdo->query('SELECT * FROM push_devices')->fetch(PDO::FETCH_ASSOC);
+check('FCM-Token und Geheimnisse nicht im Klartext', !str_contains(json_encode($row), $fcmTok)
+    && !str_contains(json_encode($row), explode('.', $pkey)[1]) && !str_contains(json_encode($row), explode('.', $pdev)[1]), $row);
+
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'ch' => 'urgent', 'title' => 'Wasser im Keller', 'body' => 'Sensor 2',
+                                  'url' => 'https://192.168.178.20:8790/aufgaben']);
+check('Push senden', $s === 200 && $r['ok'] === true, $r);
+check('Push erreicht FCM mit Token und Daten', count($sent) === 1 && $sent[0][0] === $fcmTok && $sent[0][2] === true
+    && $sent[0][1] === ['ch' => 'urgent', 'title' => 'Wasser im Keller', 'body' => 'Sensor 2',
+                        'url' => 'https://192.168.178.20:8790/aufgaben'], $sent);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'Hinweis']);
+check('Standard-Kanal normal', $s === 200 && end($sent)[1]['ch'] === 'normal' && end($sent)[2] === false, $sent);
+[$s, $r] = $tp->call('/v1/push', ['key' => explode('.', $pkey)[0] . '.' . b64u(random_bytes(32)), 'title' => 'x']);
+check('falsches Geheimnis', $s === 404 && $r['error'] === 'unknown', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => 'quatsch', 'title' => 'x']);
+check('Schluessel-Form geprueft', $s === 400 && $r['error'] === 'key', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => '']);
+check('Titel noetig', $s === 400 && $r['error'] === 'title', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => str_repeat('ü', 121)]);
+check('Titel hoechstens 120 Zeichen', $s === 400 && $r['error'] === 'title', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => str_repeat('ü', 120)]);
+check('Umlaute zaehlen als ein Zeichen', $s === 200, $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x', 'ch' => 'laut']);
+check('Kanal geprueft', $s === 400 && $r['error'] === 'ch', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x', 'url' => 'javascript:alert(1)']);
+check('nur http(s)-Links', $s === 400 && $r['error'] === 'url', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x', 'url' => 'http://evil.example\\@192.168.178.10/']);
+check('keine Adressen mit Backslash/@', $s === 400 && $r['error'] === 'url', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x', 'body' => str_repeat('😀', 1000)]);
+check('Byte-Grenze fuer FCM', $s === 400 && $r['error'] === 'too_long', $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pdev, 'title' => 'x']);
+check('Geraete-Geheimnis kann nicht senden', $s === 404 && $r['error'] === 'unknown', $r);
+$fcmResult = 'error';
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('FCM-Fehler -> 502', $s === 502 && $r['error'] === 'push_failed', $r);
+$fcmResult = 'ok';
+
+// neues Token von Google: gleicher Schluessel, neues Ziel
+$fcmTok2 = 'fcm:' . str_repeat('B', 140);
+[$s, $r] = $tp->call('/v1/push-register', ['token' => $fcmTok2, 'device' => $pdev]);
+check('Token aktualisieren mit Geraete-Geheimnis', $s === 200 && $r['ok'] === true, $r);
+[$s, $r] = $tp->call('/v1/push-register', ['token' => 'fcm:' . str_repeat('X', 140), 'device' => $pkey]);
+check('Push-Schluessel kann nicht umlenken', $s === 404 && $r['error'] === 'unknown', $r);
+[$s, $r] = $tp->call('/v1/push-delete', ['device' => $pkey]);
+check('Push-Schluessel kann nicht abmelden', $s === 404 && $r['error'] === 'unknown', $r);
+$tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('danach an das neue Token', end($sent)[0] === $fcmTok2, end($sent));
+[$s, $r] = $tp->call('/v1/push-register', ['token' => $fcmTok2, 'device' => explode('.', $pdev)[0] . '.' . b64u(random_bytes(32))]);
+check('fremdes Aktualisieren abgelehnt', $s === 404 && $r['error'] === 'unknown', $r);
+
+// App deinstalliert: Google meldet das Token ab -> 410, bis die App ein neues meldet
+$fcmResult = 'gone';
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('abgemeldetes Token -> 410', $s === 410 && $r['error'] === 'gone', $r);
+$fcmResult = 'ok';
+$n = count($sent);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('danach kein FCM-Aufruf mehr', $s === 410 && count($sent) === $n, $r);
+$tp->call('/v1/push-register', ['token' => $fcmTok2, 'device' => $pdev]);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('neu gemeldet -> wieder zustellbar', $s === 200, $r);
+
+// Benachrichtigungen auf dem Handy blockiert -> Absender erfaehrt es (409 muted), wieder erlaubt -> zustellbar
+$tp->call('/v1/push-register', ['token' => $fcmTok2, 'device' => $pdev, 'active' => false]);
+$n = count($sent);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('blockiert -> 409 muted ohne FCM-Aufruf', $s === 409 && $r['error'] === 'muted' && count($sent) === $n, $r);
+$tp->call('/v1/push-register', ['token' => $fcmTok2, 'device' => $pdev, 'active' => true]);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+check('wieder erlaubt -> zustellbar', $s === 200, $r);
+
+// Grenze je Geraet (auch von verschiedenen Adressen)
+$tp->now = (intdiv($tp->now, 3600) + 1) * 3600;
+for ($i = 0; $i < 120; $i++) {
+    $tp->ip = '203.0.113.' . ($i % 50);
+    [$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => "n$i"]);
+}
+check('120 Nachrichten je Stunde', $s === 200, $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $pkey, 'title' => 'zu viel']);
+check('Grenze je Geraet', $s === 429 && $r['error'] === 'rate_limit', $r);
+$tp->ip = '198.51.100.7';
+
+// Aufraeumen: ein Jahr ohne Lebenszeichen; abgemeldete nach 30 Tagen
+[$s, $reg2] = $tp->call('/v1/push-register', ['token' => 'fcm:' . str_repeat('C', 140)]);
+$tp->now += 300 * 86400;
+$tp->call('/v1/push-register', ['token' => $fcmTok2, 'device' => $pdev]);
+$tp->now += 100 * 86400;
+$tp->svc->housekeeping();
+check('altes Push-Geraet geloescht, aktives bleibt',
+    (int)$ppdo->query('SELECT COUNT(*) FROM push_devices')->fetchColumn() === 1
+    && $tp->call('/v1/push', ['key' => $pkey, 'title' => 'x'])[0] === 200);
+$fcmResult = 'gone';
+$tp->call('/v1/push', ['key' => $pkey, 'title' => 'x']);
+$fcmResult = 'ok';
+$tp->now += 31 * 86400;
+$tp->svc->housekeeping();
+check('abgemeldetes Geraet nach 30 Tagen geloescht', (int)$ppdo->query('SELECT COUNT(*) FROM push_devices')->fetchColumn() === 0);
+// nie benutzte Anmeldung ohne Lebenszeichen nach 90 Tagen weg, benutzte bleibt
+$tp->call('/v1/push-register', ['token' => 'fcm:' . str_repeat('D', 140)]);
+$tp->now += 91 * 86400;
+$tp->svc->housekeeping();
+check('nie benutzte Anmeldung nach 90 Tagen geloescht', (int)$ppdo->query('SELECT COUNT(*) FROM push_devices')->fetchColumn() === 0);
+// Tagesgrenze neue Anmeldungen je Adresse
+$tp->now = (intdiv($tp->now, 86400) + 1) * 86400;
+$tp->ip = '203.0.113.99';
+for ($i = 0; $i < 50; $i++) {
+    if ($i === 25) $tp->now += 3600;   // je Stunde hoechstens 30
+    [$s, $r] = $tp->call('/v1/push-register', ['token' => 'fcm:' . str_repeat('E', 100) . $i]);
+}
+check('50 Anmeldungen je Tag', $s === 200, $r);
+[$s, $r] = $tp->call('/v1/push-register', ['token' => 'fcm:' . str_repeat('E', 100) . 'x']);
+check('Tagesgrenze Anmeldungen', $s === 429 && $r['error'] === 'rate_limit', $r);
+$tp->ip = '198.51.100.7';
+
+// Abschalten in der App
+[$s, $reg3] = $tp->call('/v1/push-register', ['token' => $fcmTok]);
+[$s, $r] = $tp->call('/v1/push-delete', ['device' => $reg3['device']]);
+check('Push abmelden', $s === 200 && $r['ok'] === true, $r);
+[$s, $r] = $tp->call('/v1/push', ['key' => $reg3['key'], 'title' => 'x']);
+check('nach Abmelden unbekannt', $s === 404 && $r['error'] === 'unknown', $r);
+
+// --- Fcm mit nachgebautem Google: Nachricht und Fehlerzuordnung ---
+require_once __DIR__ . '/../src/push.php';
+final class FakeFcm extends HHKeys\Fcm
+{
+    public array $calls = [];
+    public array $answer = [200, '{"name":"projects/camperflower/messages/1"}'];
+
+    protected function post(string $url, string $body, array $headers): array
+    {
+        $this->calls[] = [$url, $body];
+        if (str_contains($url, 'oauth2')) {
+            parse_str($body, $f);
+            $claims = json_decode(base64_decode(strtr(explode('.', $f['assertion'])[1], '-_', '+/')), true);
+            $ok = $claims['scope'] === 'https://www.googleapis.com/auth/firebase.messaging';
+            return $ok ? [200, json_encode(['access_token' => 'at', 'expires_in' => 3599])] : [400, '{}'];
+        }
+        return $this->answer;
+    }
+}
+$rsa2 = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+openssl_pkey_export($rsa2, $pemPriv2);
+$saFile2 = tempnam(sys_get_temp_dir(), 'sa');
+file_put_contents($saFile2, json_encode(['client_email' => 'x@y.iam.gserviceaccount.com', 'private_key' => $pemPriv2]));
+$f = new FakeFcm(['service_account' => $saFile2, 'firebase' => $fb], $ppdo);
+check('FCM zugestellt', $f('tok', ['ch' => 'urgent', 'title' => 'Ä', 'body' => '', 'url' => ''], true) === 'ok', $f->calls);
+$last = end($f->calls);
+$m = json_decode($last[1], true)['message'] ?? [];
+check('FCM: richtiges Projekt, Datennachricht, hohe Prioritaet',
+    $last[0] === 'https://fcm.googleapis.com/v1/projects/camperflower/messages:send' && $m['token'] === 'tok'
+    && $m['data']['title'] === 'Ä' && $m['android']['priority'] === 'high' && !isset($m['notification']), $last);
+$f('tok', ['ch' => 'normal', 'title' => 'x', 'body' => '', 'url' => ''], false);
+check('FCM: normale Prioritaet', json_decode(end($f->calls)[1], true)['message']['android']['priority'] === 'normal');
+$f->answer = [404, json_encode(['error' => ['status' => 'NOT_FOUND', 'details' => [['errorCode' => 'UNREGISTERED']]]])];
+check('FCM UNREGISTERED -> gone', $f('tok', [], true) === 'gone');
+$f->answer = [404, json_encode(['error' => ['status' => 'NOT_FOUND', 'message' => 'Requested entity was not found.']])];
+check('FCM 404 ohne UNREGISTERED (falsches Projekt) -> error, Geraet bleibt', $f('tok', [], true) === 'error');
+$f->answer = [200, '{}'];
+$f('tok', [], false, true);
+check('FCM validate_only gesetzt', json_decode(end($f->calls)[1], true)['validate_only'] === true, end($f->calls));
+$f->answer = [403, json_encode(['error' => ['details' => [['errorCode' => 'SENDER_ID_MISMATCH']]]])];
+check('FCM SENDER_ID_MISMATCH -> gone', $f('tok', [], true) === 'gone');
+$f->answer = [400, json_encode(['error' => ['message' => 'The registration token is not a valid FCM registration token']])];
+check('FCM ungueltiges Token -> gone', $f('tok', [], true) === 'gone');
+$f->answer = [400, json_encode(['error' => ['message' => 'Invalid JSON payload received.']])];
+check('FCM anderer 400 -> error (Geraet bleibt)', $f('tok', [], true) === 'error');
+$f->answer = [503, '{}'];
+check('FCM nicht erreichbar -> error', $f('tok', [], true) === 'error');
+check('FCM-Zugang zwischengespeichert', count(array_filter($f->calls, fn($c) => str_contains($c[0], 'oauth2'))) === 1, $f->calls);
+try {
+    new FakeFcm(['service_account' => $saFile2, 'firebase' => []], $ppdo);
+    check('fehlende Firebase-Projekt-id faellt auf', false);
+} catch (RuntimeException) {
+    check('fehlende Firebase-Projekt-id faellt auf', true);
+}
+unlink($saFile2);
+
 // --- gespeicherte Schluessel sind verschluesselt ---
 $pdo = new PDO('sqlite::memory:');
 $cfg = ['master_key' => base64_encode(random_bytes(32)), 'ip_salt' => 'x'];

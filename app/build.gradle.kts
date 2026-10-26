@@ -112,6 +112,9 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
     // Google Play Integrity: Echtheitspruefung fuer den Gastzugang (Schluesseldienst entscheidet, ob er sie verlangt)
     implementation("com.google.android.play:integrity:1.4.0")
+    // Push-Benachrichtigungen (wahlweise, Standard aus): ohne google-services-Plugin, Firebase wird erst beim
+    // Einschalten mit den Angaben vom Schluesseldienst gestartet (Push.kt)
+    implementation("com.google.firebase:firebase-messaging:25.0.1")
     // biometric bringt Fragment 1.2 mit - zu alt fuer registerForActivityResult
     implementation("androidx.fragment:fragment-ktx:1.8.9")
     // Kamera: RTSP-Livebild (ExoPlayer + RTSP + PlayerView)

@@ -49,7 +49,7 @@ per address, and malformed tokens are rejected without a call.
 
 | Endpoint | Caller | Body | Answer |
 |---|---|---|---|
-| `GET health` | anyone | – | `{"ok": true, "api": 1, "integrity": false}` |
+| `GET health` | anyone | – | `{"ok": true, "api": 1, "integrity": false}` (+ `push`, see below) |
 | `create` | owner | `owner`, `ts`, `nonce`, `expires` (Unix time or null), [`integrity`] | `id`, `key`, `bind`, `expires` |
 | `bind` | guest, once | `id`, `bind`, `pub` (SubjectPublicKeyInfo DER), `ts`, `nonce`, `sig`, [`integrity`] | `ok`, `device`, `expires` |
 | `key` | guest, every tap | `id`, `ts`, `nonce`, `sig`, [`integrity`] | `key`, `expires` |
@@ -63,12 +63,43 @@ Error codes include `unknown` (404, also for another owner's invite), `blocked` 
 
 For `create`, `<id-or-owner-hash>` is the lowercase hex SHA-256 of the raw owner token.
 
+## Push notifications (optional)
+
+The same service relays push notifications to phones that switched them on (*Notifications* in the app menu, off by
+default). The app registers its Firebase Cloud Messaging token and gets a **push key** `<id>.<secret>` plus a
+separate **device secret** `<id>.<secret2>` that never leaves the app. Whoever holds the push key – the user's own
+server, Home Assistant, a script – can send a notification to that one phone, nothing else: changing the token or
+unregistering needs the device secret. The service stores the FCM token encrypted (`master_key`) and only SHA-256
+hashes of both secrets; message text is passed through to FCM and not stored. New tokens are checked with Google
+(`validate_only`) before they are stored.
+
+| Endpoint | Caller | Body | Answer |
+|---|---|---|---|
+| `push-register` | app | `token` (FCM), [`active` = notifications allowed, default true], [`device` to update an existing registration] | new: `key`, `device`; update: `ok` |
+| `push` | sender | `key`, `title` (≤ 120 chars), [`body` ≤ 2000], [`ch` = `normal` / `urgent`], [`url` http(s), without `\` or `@`]; title + body + url ≤ 3500 bytes | `ok` |
+| `push-delete` | app | `device` | `ok` |
+
+```
+curl -s https://camperflower.de/keys/v1/push -H 'Content-Type: application/json'   -d '{"key":"<push key>","ch":"urgent","title":"Water in the basement","body":"Sensor 2"}'
+```
+
+`urgent` is delivered with high priority to the channel *Urgent*; `normal` to *Messages*. Tapping a notification
+whose `url` belongs to one of the user's own entries opens that entry. Errors: `unknown` (404, wrong key or push switched off in the app),
+`gone` (410: Google unregistered the phone, e.g. app removed or data cleared – switch push on again in the app and
+use the new key), `muted` (409: notifications are blocked on the phone; the app reports this),
+`push_failed` (502, FCM error, retry later), `push_off` (503), `too_long` (400), `rate_limit` (429: 120 messages per
+phone and hour; 30 new registrations per address and hour, 50 per day).
+`health` then also returns `push` with the public Firebase app settings the app needs (project, app id, API key,
+sender id). Registrations without any message and without a sign of life for 90 days are deleted, all others after
+12 months without either, unregistered ones after 30 days. Switching push off in the app deletes the registration
+(retried on the next app start when offline).
+
 ## Running it
 
 Any PHP ≥ 8.1 host with `pdo_sqlite`, `sodium`, `openssl` (and `curl` for Play Integrity):
 
 ```
-<home>/hh-keys/src/          server.php, integrity.php
+<home>/hh-keys/src/          server.php, integrity.php, google.php, push.php
 <home>/hh-keys/config.php    from config.example.php, random master_key + ip_salt, mode 600
 <home>/hh-keys/data/         SQLite database, mode 700
 <webroot>/keys/              public/index.php + public/.htaccess (everything is routed to index.php)
