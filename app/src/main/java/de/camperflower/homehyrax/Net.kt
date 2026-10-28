@@ -18,6 +18,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -154,17 +158,32 @@ object Net {
         cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 scope.launch { pushInterfaces(); Wgbridge.networkChanged() }
+                netChanged.update { it + 1 }
             }
 
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
                 scope.launch { pushInterfaces(); Wgbridge.networkChanged() }
+                netChanged.update { it + 1 }
             }
 
             override fun onLost(network: Network) {
                 scope.launch { pushInterfaces() }
+                netChanged.update { it + 1 }
             }
         })
     }
+
+    private val netChanged = MutableStateFlow(0L)
+
+    /** Zaehlt jeden Wechsel des Standardnetzes (WLAN <-> Mobilfunk, anderes WLAN). Sichtbare Web-Apps pruefen dann neu. */
+    val networkChanges: StateFlow<Long> = netChanged.asStateFlow()
+
+    /**
+     * Merkmal des Netzes, in dem zuletzt "zuhause oder unterwegs" entschieden wurde: Fingerabdruck des WLANs,
+     * ohne WLAN "mobile". Aendert es sich, stimmt die Entscheidung womoeglich nicht mehr (zuhause direkt
+     * geoeffnet, unterwegs aus dem Hintergrund geholt -> Anfragen gingen weiter direkt ins Leere).
+     */
+    fun networkKey(): String = wifiFingerprint() ?: "mobile"
 
     /**
      * Tailscale braucht die Netzwerk-Schnittstellen; Go darf sie unter Android

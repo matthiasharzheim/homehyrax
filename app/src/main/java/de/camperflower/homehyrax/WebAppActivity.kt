@@ -94,11 +94,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import de.camperflower.homehyrax.wgbridge.Wgbridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
@@ -138,6 +141,10 @@ class WebAppActivity : FragmentActivity() {
     private var fallbackTried = false
     private var proxyAuthTries = 0
     private var loadedOnce = false
+    /** Netz (Net.networkKey), in dem zuletzt zuhause/unterwegs entschieden wurde; null = noch nicht entschieden */
+    private var decidedOn: String? = null
+    /** Netzwechsel waehrend des Verbindens: nach Ready/Failed nachpruefen (sonst ginge er verloren) */
+    private var recheckPending = false
     /** Adresse aus einer Benachrichtigung (gleicher Ursprung wie der Eintrag): beim naechsten Laden statt der Startseite */
     private var startUrl: String? = null
     private var awaitingLoad = false
@@ -254,6 +261,17 @@ class WebAppActivity : FragmentActivity() {
         setContent { Screen() }
         if (app.requireAuth) { locked = true; unlock() }
         else { startedOnce = true; lifecycleScope.launch { start() } }
+        // Netzwechsel, waehrend die Seite sichtbar ist (z. B. aus dem WLAN gegangen): kurz warten, bis das neue
+        // Netz steht, dann neu pruefen. Im Hintergrund prueft onStart beim Zurueckkommen.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Net.networkChanges.drop(1).collectLatest {
+                    delay(NET_SETTLE_MS)
+                    // fehlgeschlagen (z. B. Tunnel vor dem Mobilfunk gestartet): im neuen Netz einfach noch einmal
+                    if (phase is Phase.Failed && !locked && decidedOn != null) retry() else recheckIfNetworkChanged()
+                }
+            }
+        }
     }
 
     /**
@@ -327,10 +345,12 @@ class WebAppActivity : FragmentActivity() {
             fail(getString(R.string.web_webview_too_old))
             return
         }
+        decidedOn = withContext(Dispatchers.IO) { Net.networkKey() }
         val where = Net.where(app)
         skippedProbe = where.skipped
         if (t == null || where.home) {
             wantTunnel = false
+            releaseTunnel()   // nach einem Netzwechsel von unterwegs nach zuhause: Tunnel nicht weiter festhalten
             Net.route(app, null)
             viaTunnel = false
             load()
@@ -380,7 +400,34 @@ class WebAppActivity : FragmentActivity() {
         loadedOnce = true
     }
 
-    private fun fail(msg: String) { phase = Phase.Failed(msg) }
+    private fun fail(msg: String) {
+        phase = Phase.Failed(msg)
+        afterConnecting()
+    }
+
+    /** Verbinden beendet (Ready/Failed): Netzwechsel von waehrenddessen nachholen */
+    private fun afterConnecting() {
+        if (!recheckPending) return
+        recheckPending = false
+        // im Hintergrund nichts neu laden - onStart prueft beim Zurueckkommen ohnehin
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) lifecycleScope.launch { recheckIfNetworkChanged() }
+    }
+
+    /**
+     * Anderes Netz als bei der letzten Entscheidung (WLAN <-> Mobilfunk, anderes WLAN): zuhause/unterwegs neu
+     * pruefen und den Weg wechseln. Sonst bliebe eine zuhause direkt geoeffnete Seite unterwegs auf "direkt" und
+     * jede Anfrage liefe ins Leere (bzw. umgekehrt unnoetig durch den Tunnel).
+     * "Immer VPN" und Eintraege ohne Tunnel haben keine Wahl; der Tunnel selbst folgt dem Netz (NetworkChanged).
+     */
+    private fun recheckIfNetworkChanged(): Boolean {
+        val seen = decidedOn ?: return false
+        if (tunnel == null || app.alwaysTunnel) return false
+        if (phase is Phase.Connecting) { recheckPending = true; return false }
+        if (Net.networkKey() == seen) return false
+        if (locked) { refreshAfterUnlock = true; return true }
+        retry()
+        return true
+    }
 
     private fun retry() {
         if (phase is Phase.Connecting) return   // sonst liefen zwei start() gleichzeitig
@@ -411,6 +458,8 @@ class WebAppActivity : FragmentActivity() {
             if (locked) { refreshAfterUnlock = true; return }
             if (phase !is Phase.Connecting) { retry(); return }
         }
+        // kurz weg, aber inzwischen in einem anderen Netz (zuhause geoeffnet, unterwegs fortgesetzt)
+        if (startedOnce && hiddenAt > 0 && recheckIfNetworkChanged()) return
         // Routen sind global je Host: eine andere Kachel/Kamera kann sie inzwischen umgestellt haben
         if (loadedOnce) Net.route(app, if (viaTunnel) tunnel?.id else null)
         val t = tunnel ?: return
@@ -646,6 +695,7 @@ class WebAppActivity : FragmentActivity() {
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
+                afterConnecting()
                 flashBadge()
                 menuAnstoss++   // Menue-Knopf kurz zeigen, damit man weiss, dass es ihn gibt
             }
@@ -991,6 +1041,8 @@ class WebAppActivity : FragmentActivity() {
         private const val SWIPE_MIN_DP = 60
         /** so lange im Hintergrund -> beim Zurueckkehren neu pruefen und laden */
         private const val REFRESH_AFTER_MS = 30 * 60_000L
+        /** nach einem Netzwechsel so lange warten, bis das neue Netz steht (WLAN weg -> Mobilfunk kommt nach) */
+        private const val NET_SETTLE_MS = 1_500L
     }
 }
 
