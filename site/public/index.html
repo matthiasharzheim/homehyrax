@@ -289,7 +289,7 @@
               <h4><svg width="22" height="22" style="color:var(--cyan)"><use href="#i-key"/></svg>WireGuard</h4>
               <span class="best">Fastest and most private</span>
               <ul>
-                <li>Phone connects <b>directly</b> to your router, nobody in between</li>
+                <li>Phone connects <b>directly</b> to your router – no account, no cloud service in between</li>
                 <li>Needs a connection reachable from outside: own public IPv4 (classic DSL/fiber) or IPv6</li>
                 <li>Built into the FRITZ!Box from FRITZ!OS 7.50</li>
               </ul>
@@ -301,7 +301,7 @@
                 <li>For DS-Lite, CGNAT, many cable/fiber lines, LTE/5G routers – e.g. in the camper</li>
                 <li>No port forwarding: both sides connect outward</li>
                 <li>Needs a device at home as subnet router (Raspberry Pi, NAS …)</li>
-                <li>Sign-in via Tailscale (free for personal use) or your own Headscale server</li>
+                <li>Sign-in and coordination via Tailscale's servers (free for personal use, data end-to-end encrypted) – or via your own Headscale server</li>
               </ul>
             </div>
           </div>
@@ -374,12 +374,23 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
           <p class="muted">With an <b>auth key</b> (Tailscale admin → Settings → Keys) you can skip the browser sign-in, e.g. for a family phone. When sharing via QR code, HomeHyrax never passes the auth key on.</p>
 </div></details>
 <details id="g-camper"><summary><svg><use href="#i-camper"/></svg>Camper with an LTE/5G router</summary><div>
-          <p>Mobile routers are almost never reachable from outside – take Tailscale.</p>
+          <p>Mobile routers are almost never reachable from outside – so your phone cannot connect to the camper directly. Give the camper its own address range (e.g. <code>192.168.50.0/24</code>), different from home – otherwise the same addresses get mixed up.</p>
+          <h4>a) With Tailscale (the easy way)</h4>
           <ul class="ticks">
             <li>Larger Teltonika models (RUTX, RUTM, TRB1/TRB5) offer Tailscale as a package (System → Package Manager, then Services → VPN → Tailscale; see Teltonika wiki “Tailscale Configuration Example”).</li>
             <li>Small models like the <b>RUT200</b> don't have enough memory: connect a <b>Raspberry Pi Zero 2 W</b> by Wi-Fi or LAN and set it up as subnet router as above.</li>
-            <li>Give the camper its own address range (e.g. <code>192.168.50.0/24</code>), different from home – otherwise the same addresses get mixed up.</li>
+            <li>Tailscale is free for personal use; sign-in and coordination run via Tailscale's servers. Without any third-party service: your own Headscale server (needs a computer reachable from outside, often a rented server).</li>
           </ul>
+          <h4>b) Without a cloud service: a WireGuard node at home</h4>
+          <p>For tinkerers. At home, a WireGuard server runs on a device that is always on anyway (Raspberry Pi, Linux computer, NAS). Phone and camper router both connect to it, and the server forwards the phone's requests to the camper – a common WireGuard combination of “hub and spoke” (phone) and “site to site” (camper router with its network). Requirements: your home connection is fit for WireGuard (see <a href="#g-choose">WireGuard or Tailscale?</a>), and the camper router supports WireGuard (e.g. Teltonika RUT200, GL.iNet, OpenWrt).</p>
+          <ol class="steps">
+            <li>In your home router, forward the server's UDP port (e.g. <code>51820</code>) to the server; on the server, switch on forwarding (<code>net.ipv4.ip_forward = 1</code>). So that devices in your home network can answer too: NAT on the server (PiVPN sets this up itself) or static routes in the FRITZ!Box for the tunnel and camper networks via the server (<span class="ui path">Home Network → Network → Network Settings → IPv4 Routes</span>).</li>
+            <li>On the server, add two peers: the phone and the camper router. For the camper router, the camper network goes into <code>AllowedIPs</code> (e.g. <code>10.8.0.3/32, 192.168.50.0/24</code>).</li>
+            <li>In the camper router: <code>Endpoint</code> = dynamic DNS name of your home connection with port (e.g. the MyFRITZ! address), <code>AllowedIPs</code> = tunnel network (e.g. <code>10.8.0.0/24</code>), <code>PersistentKeepalive = 25</code> – the camper opens the connection itself and keeps it open on mobile networks. The <code>AllowedIPs</code> must apply as routes there (Teltonika: “Route Allowed IPs”), and the firewall must allow traffic from the tunnel into the camper network.</li>
+            <li>Load the phone's configuration into HomeHyrax. <code>AllowedIPs</code> lists the tunnel network, home network and camper network – or <code>0.0.0.0/0</code>, which works too: HomeHyrax still sends only the addresses of the assigned tiles through the tunnel. Then assign the tiles of the camper devices (e.g. <code>192.168.50.10</code>) to this tunnel.</li>
+          </ol>
+          <p class="muted">Guides (Pro Custodibus): <a href="https://www.procustodibus.com/blog/2020/11/wireguard-hub-and-spoke-config/">Hub and Spoke</a>, <a href="https://www.procustodibus.com/blog/2020/12/wireguard-site-to-site-config/">Site to Site</a>. We have not yet run this setup with a real camper. Questions to <a href="mailto:info@camperflower.de">info@camperflower.de</a>.</p>
+          <div class="note"><svg><use href="#i-info"/></svg><p><b>And with just the FRITZ!Box?</b> The FRITZ!Box can join the camper router to your home network via <span class="ui path">Link Networks</span>: then your home network reaches the camper devices and vice versa. For access between two linked sites, however, AVM requires a separate connection between them. So requests from your phone on the go are not expected to reach the camper via the FRITZ!Box – that takes option a) or b).</p></div>
 </div></details>
 <details id="g-web"><summary><svg><use href="#i-web"/></svg>Add a website</summary><div>
           <ol class="steps">
@@ -500,7 +511,7 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
     </div>
     <div class="grid g3">
       <div class="card"><div class="ico c"><svg><use href="#i-key"/></svg></div><h3>Encrypted</h3><p class="muted">Keys and passwords AES-GCM with Android Keystore.</p></div>
-      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>No tracking</h3><p class="muted">No account, no logs, no ads. Only sharing via invitation uses our key service.</p></div>
+      <div class="card"><div class="ico g"><svg><use href="#i-shield"/></svg></div><h3>No tracking</h3><p class="muted">No account, no logs, no ads. Only sharing via invitation and push notifications (when switched on) use our key service.</p></div>
       <div class="card"><div class="ico y"><svg><use href="#i-lock"/></svg></div><h3>Locked down</h3><p class="muted">Local proxy with a new password on every start.</p></div>
     </div>
     <p class="muted" style="text-align:center;margin-top:24px"><a href="https://camperflower.de/homehyrax-datenschutz/">Privacy policy</a></p>
@@ -558,6 +569,7 @@ export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
   <div class="wrap" style="max-width:900px">
     <p class="acc-title">FAQ</p>
     <details><summary>What does it cost?</summary><div><p>Nothing. No subscription, no ads. Tailscale is free for personal use.</p></div></details>
+    <details><summary>Does it work without a cloud?</summary><div><p>With WireGuard, yes: your phone connects directly to your router. Tailscale needs Tailscale's servers for sign-in and coordination (free for personal use, data end-to-end encrypted) – or your own Headscale server. Only sharing via invitation and the optional push notifications use our key service (push also via Google Firebase).</p></div></details>
     <details><summary>Do I need an account?</summary><div><p>Not with us. WireGuard needs none at all; Tailscale uses your Tailscale account or your own Headscale.</p></div></details>
     <details><summary>Can I keep my other VPN?</summary><div><p>Yes. HomeHyrax doesn't use Android's VPN slot.</p></div></details>
     <details><summary>Does it drain the battery?</summary><div><p>No. The tunnel only exists while an entry is open and is gone 90 s after closing.</p></div></details>
