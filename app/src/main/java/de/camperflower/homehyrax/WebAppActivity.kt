@@ -476,6 +476,10 @@ class WebAppActivity : FragmentActivity() {
         super.onStop()
         Net.webAppVisible(false)
         hiddenAt = android.os.SystemClock.elapsedRealtime()
+        // Mikrofon nur, solange die Seite sichtbar ist: Android 8 nimmt im Hintergrund sonst weiter auf
+        // (ab Android 9 waere es dort stumm). Die Seite fragt beim naechsten Mal neu an. Immer aufrufen (ohne Spuren
+        // tut es nichts): auch eine Freigabe, die gerade noch unterwegs ist, endet so (MIC_JS prueft "hidden").
+        if (::web.isInitialized) web.evaluateJavascript(MIC_STOP_JS, null)
         releaseTunnel()
     }
 
@@ -502,7 +506,7 @@ class WebAppActivity : FragmentActivity() {
         // einzige Bruecke zur Seite: ein Wahr/Falsch fuer "zweimal nach unten wischen" (siehe PULL_JS)
         addJavascriptInterface(PullBridge(), "HomeHyraxPull")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
-            WebViewCompat.addDocumentStartJavaScript(this, PULL_JS, setOf("*"))
+            WebViewCompat.addDocumentStartJavaScript(this, PULL_JS + ";" + MIC_JS, setOf("*"))
         if (app.desktop) {
             // Desktop-Webseite: Desktop-User-Agent (gleiche Chrome-Version), "Mobile"/Android-Kennung weg
             val chrome = Regex("Chrome/[\\d.]+").find(settings.userAgentString)?.value ?: "Chrome/130.0.0.0"
@@ -691,7 +695,7 @@ class WebAppActivity : FragmentActivity() {
             // Desktop: mobiles Viewport-Tag ueberschreiben -> Seite wird in 1200 px Breite gelayoutet und eingepasst
             if (app.desktop) view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
             // alte WebViews ohne Dokumentstart-Skript: nach dem Laden nachreichen (PULL_JS laeuft nur einmal)
-            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(PULL_JS, null)
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(PULL_JS + ";" + MIC_JS, null)
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
@@ -1069,6 +1073,31 @@ private const val PULL_JS =
     "if(!s&&window!==top&&se&&se.scrollTop>0)s=true;r(s);},{capture:true,passive:true});" +
     "document.addEventListener('touchmove',function(e){pv();l=e;},{capture:true,passive:true});" +
     "document.addEventListener('touchend',function(){pv();l=null;},{capture:true,passive:true});})()"
+
+/**
+ * Merkt sich die Mikrofon-Spuren aus getUserMedia (auch alte webkit-Form, geklonte Spuren und Streams), damit die
+ * App sie beim Verlassen beenden kann (MIC_STOP_JS) - auch in iframes gleichen Ursprungs. Beendete Spuren melden
+ * "ended" (Seiten koennen neu anfragen); kommt eine Freigabe erst an, wenn die Seite schon verdeckt ist, endet sie
+ * sofort. Aendert sonst nichts an der Seite.
+ */
+private const val MIC_JS =
+    "(function(){if(window.__hhMic)return;var s=[];" +
+    "function e(t){try{if(t.readyState!=='ended'){t.stop();t.dispatchEvent(new Event('ended'));}}catch(x){}}" +
+    "function k(m){m.getAudioTracks().forEach(function(t){s.push(t);if(document.visibilityState==='hidden')e(t);});return m;}" +
+    "window.__hhMic=function(){s.forEach(e);s=[];" +
+    "for(var i=0;i<window.frames.length;i++){try{var f=window.frames[i];if(f.__hhMic)f.__hhMic();}catch(x){}}};" +
+    "var T=window.MediaStreamTrack;if(T&&T.prototype.clone){var c=T.prototype.clone;" +
+    "T.prototype.clone=function(){var n=c.apply(this,arguments);if(s.indexOf(this)>=0)s.push(n);return n;};}" +
+    "var M=window.MediaStream;if(M&&M.prototype.clone){var mc=M.prototype.clone;" +
+    "M.prototype.clone=function(){var n=mc.apply(this,arguments);" +
+    "if(this.getAudioTracks().some(function(t){return s.indexOf(t)>=0;}))k(n);return n;};}" +
+    "var d=navigator.mediaDevices;if(d&&d.getUserMedia){var g=d.getUserMedia.bind(d);" +
+    "d.getUserMedia=function(c){return g(c).then(k);};}" +
+    "var w=navigator.webkitGetUserMedia;if(w){navigator.webkitGetUserMedia=function(c,ok,er){" +
+    "return w.call(navigator,c,function(m){ok&&ok(k(m));},er);};}})()"
+
+/** Beendet alle Mikrofon-Spuren, die die Seite ueber getUserMedia geoeffnet hat (Hauptseite und iframes). */
+private const val MIC_STOP_JS = "(function(){try{if(window.__hhMic)window.__hhMic();}catch(x){}})()"
 
 private const val DESKTOP_VIEWPORT_JS =
     "(function(){var m=document.querySelector('meta[name=viewport]');" +

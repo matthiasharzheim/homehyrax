@@ -44,6 +44,8 @@ class HomeHyraxApp : Application() {
         CrashLog.install(this)
         Net.init(this)
         Push.init(this)
+        // geladene Anhaenge und Kamera-Fotos (cacheDir) nicht bis zum naechsten Download liegen lassen
+        Thread { runCatching { WebFiles.cleanup(this) } }.start()
     }
 }
 
