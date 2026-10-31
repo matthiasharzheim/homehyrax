@@ -177,6 +177,7 @@
             <li>Full screen with its own home-screen icon</li>
             <li>Badge shows <span class="ui">Home · direct</span> or <span class="ui">Away · via WireGuard</span></li>
             <li>Live values stay live, swipe down twice quickly at the top for the menu: <span class="ui">Refresh</span> and <span class="ui">Settings</span></li>
+            <li>Upload files (photos too) and open attachments like PDFs – also on the go through the tunnel; microphone only if you allow it for the entry (https pages)</li>
           </ul>
         </div>
       </div>
@@ -396,6 +397,22 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
             <li>The Wi-Fi is recognized by address range, router address and domain – <b>not</b> by its name, so HomeHyrax needs no location permission.</li>
           </ul>
           <div class="note info"><svg><use href="#i-info"/></svg><p><b>Tip:</b> a foreign Wi-Fi with the same default network as yours (e.g. another FRITZ!Box with <code>192.168.178.x</code>) where something happens to answer at the target address is taken for home. Remedy: use your own address range at home (e.g. <code>10.20.30.0/24</code>) or set the entry to VPN <span class="ui">Always</span>.</p></div>
+</div></details>
+<details id="push"><summary><svg><use href="#i-bell"/></svg>Push notifications from your own server</summary><div>
+          <p>Optional and off by default. Your home automation, NAS or script sends a message – HomeHyrax shows it as a notification.</p>
+          <ol class="steps">
+            <li><span class="ui">⋮</span> → <span class="ui">Notifications</span> → switch on <span class="ui">Push notifications</span> and allow notifications.</li>
+            <li><span class="ui">Send test notification</span> – it should arrive within seconds.</li>
+            <li>Copy the <span class="ui">Push key</span> and give it to your sender (only your own – whoever has it can send notifications to this phone).</li>
+          </ol>
+          <pre><code>curl -s https://camperflower.de/keys/v1/push -H 'Content-Type: application/json' \
+  -d '{"key":"&lt;push key&gt;","ch":"urgent","title":"Water in the basement","body":"Sensor 2"}'</code></pre>
+          <ul class="ticks">
+            <li><code>ch</code>: <code>urgent</code> → channel <span class="ui">Urgent</span> (immediately, with sound), otherwise <span class="ui">Messages</span>. Sound and Do Not Disturb are set per channel in Android.</li>
+            <li><code>url</code> (optional): an address of one of your own entries – tapping the notification opens it there.</li>
+            <li>Up to 120 messages per hour; title up to 120, text up to 2000 characters.</li>
+          </ul>
+          <div class="note"><svg><use href="#i-info"/></svg><p>Delivery runs through Google Firebase Cloud Messaging and our key service, which passes the text on without storing it. Switched off, HomeHyrax has no contact with Google. Needs Google Play services. Details in the <a href="https://camperflower.de/homehyrax-datenschutz/">privacy policy</a>; API in the <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/keyserver/README.md">key service README</a>.</p></div>
 </div></details>
     </div>
   </div>

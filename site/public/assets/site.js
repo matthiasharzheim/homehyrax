@@ -120,4 +120,13 @@
     var starts = document.querySelectorAll("[data-play]");
     for (var k = 0; k < starts.length; k++) starts[k].addEventListener("click", play);
   }
+
+  // Link auf einen aufklappbaren Abschnitt (z. B. #push aus der App): aufklappen und hinscrollen
+  function openHash() {
+    var id = decodeURIComponent((location.hash || "").slice(1));
+    var d = id && document.getElementById(id);
+    if (d && d.tagName === "DETAILS") { d.open = true; d.scrollIntoView({ block: "start" }); }
+  }
+  window.addEventListener("hashchange", openHash);
+  openHash();
 })();

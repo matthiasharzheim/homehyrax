@@ -178,6 +178,7 @@
             <li>Vollbild mit eigenem Symbol auf dem Startbildschirm</li>
             <li>Plakette zeigt <span class="ui">Zuhause · direkt</span> oder <span class="ui">Unterwegs · über WireGuard</span></li>
             <li>Live-Werte bleiben live, zweimal kurz oben nach unten wischen öffnet das Menü: <span class="ui">Aktualisieren</span> und <span class="ui">Einstellungen</span></li>
+            <li>Dateien hochladen (auch Fotos) und Anhänge wie PDF öffnen – auch unterwegs über den Tunnel; Mikrofon nur, wenn du es für den Eintrag erlaubst (https-Seiten)</li>
           </ul>
         </div>
       </div>
@@ -397,6 +398,22 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
             <li>Das WLAN erkennt die App an Adressbereich, Router-Adresse und Domäne – <b>nicht</b> am Namen. Deshalb braucht HomeHyrax keine Standort-Berechtigung.</li>
           </ul>
           <div class="note info"><svg><use href="#i-info"/></svg><p><b>Tipp:</b> Ein fremdes WLAN mit demselben Standardnetz wie deins (z. B. eine andere FRITZ!Box mit <code>192.168.178.x</code>), in dem zufällig etwas unter der Zieladresse antwortet, hält die App für zuhause. Abhilfe: zuhause einen eigenen Adressbereich nutzen (z. B. <code>10.20.30.0/24</code>) oder den Eintrag auf VPN <span class="ui">Immer</span> stellen.</p></div>
+</div></details>
+<details id="push"><summary><svg><use href="#i-bell"/></svg>Push-Benachrichtigungen vom eigenen Server</summary><div>
+          <p>Wahlweise und standardmäßig aus. Deine Hausautomation, dein NAS oder ein Skript schickt eine Nachricht – HomeHyrax zeigt sie als Benachrichtigung.</p>
+          <ol class="steps">
+            <li><span class="ui">⋮</span> → <span class="ui">Benachrichtigungen</span> → <span class="ui">Push-Benachrichtigungen</span> einschalten und Benachrichtigungen erlauben.</li>
+            <li><span class="ui">Testnachricht senden</span> – sie kommt in wenigen Sekunden an.</li>
+            <li>Den <span class="ui">Push-Schlüssel</span> kopieren und deinem Absender geben (nur deinem eigenen – wer ihn hat, kann diesem Handy Benachrichtigungen schicken).</li>
+          </ol>
+          <pre><code>curl -s https://camperflower.de/keys/v1/push -H 'Content-Type: application/json' \
+  -d '{"key":"&lt;Push-Schlüssel&gt;","ch":"urgent","title":"Wasser im Keller","body":"Sensor 2"}'</code></pre>
+          <ul class="ticks">
+            <li><code>ch</code>: <code>urgent</code> → Kanal <span class="ui">Dringend</span> (sofort, mit Ton), sonst <span class="ui">Mitteilungen</span>. Ton und „Nicht stören“ stellst du je Kanal in Android ein.</li>
+            <li><code>url</code> (optional): eine Adresse aus einem deiner Einträge – Antippen der Benachrichtigung öffnet ihn dort.</li>
+            <li>Bis zu 120 Nachrichten je Stunde; Titel bis 120, Text bis 2000 Zeichen.</li>
+          </ul>
+          <div class="note"><svg><use href="#i-info"/></svg><p>Die Zustellung läuft über Google Firebase Cloud Messaging und unseren Schlüsseldienst, der den Text nur durchreicht und nicht speichert. Ausgeschaltet hat HomeHyrax keinen Kontakt zu Google. Braucht die Google-Play-Dienste. Mehr in der <a href="https://camperflower.de/homehyrax-datenschutz/">Datenschutzerklärung</a>, Schnittstelle im <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/keyserver/README.md">README des Schlüsseldienstes</a>.</p></div>
 </div></details>
     </div>
   </div>

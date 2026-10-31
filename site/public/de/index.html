@@ -59,6 +59,7 @@
 <symbol id="i-mail" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></symbol>
 <symbol id="i-video" viewBox="0 0 24 24" fill="currentColor"><path d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></symbol>
 <symbol id="i-family" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></symbol>
 <symbol id="i-help" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></symbol>
 </svg>
 
@@ -216,6 +217,7 @@
             <li>Vollbild mit eigenem Symbol auf dem Startbildschirm</li>
             <li>Plakette zeigt <span class="ui">Zuhause · direkt</span> oder <span class="ui">Unterwegs · über WireGuard</span></li>
             <li>Live-Werte bleiben live, zweimal kurz oben nach unten wischen öffnet das Menü: <span class="ui">Aktualisieren</span> und <span class="ui">Einstellungen</span></li>
+            <li>Dateien hochladen (auch Fotos) und Anhänge wie PDF öffnen – auch unterwegs über den Tunnel; Mikrofon nur, wenn du es für den Eintrag erlaubst (https-Seiten)</li>
           </ul>
         </div>
       </div>
@@ -435,6 +437,22 @@ sudo tailscale up --advertise-routes=192.168.178.0/24</code></pre>
             <li>Das WLAN erkennt die App an Adressbereich, Router-Adresse und Domäne – <b>nicht</b> am Namen. Deshalb braucht HomeHyrax keine Standort-Berechtigung.</li>
           </ul>
           <div class="note info"><svg><use href="#i-info"/></svg><p><b>Tipp:</b> Ein fremdes WLAN mit demselben Standardnetz wie deins (z. B. eine andere FRITZ!Box mit <code>192.168.178.x</code>), in dem zufällig etwas unter der Zieladresse antwortet, hält die App für zuhause. Abhilfe: zuhause einen eigenen Adressbereich nutzen (z. B. <code>10.20.30.0/24</code>) oder den Eintrag auf VPN <span class="ui">Immer</span> stellen.</p></div>
+</div></details>
+<details id="push"><summary><svg><use href="#i-bell"/></svg>Push-Benachrichtigungen vom eigenen Server</summary><div>
+          <p>Wahlweise und standardmäßig aus. Deine Hausautomation, dein NAS oder ein Skript schickt eine Nachricht – HomeHyrax zeigt sie als Benachrichtigung.</p>
+          <ol class="steps">
+            <li><span class="ui">⋮</span> → <span class="ui">Benachrichtigungen</span> → <span class="ui">Push-Benachrichtigungen</span> einschalten und Benachrichtigungen erlauben.</li>
+            <li><span class="ui">Testnachricht senden</span> – sie kommt in wenigen Sekunden an.</li>
+            <li>Den <span class="ui">Push-Schlüssel</span> kopieren und deinem Absender geben (nur deinem eigenen – wer ihn hat, kann diesem Handy Benachrichtigungen schicken).</li>
+          </ol>
+          <pre><code>curl -s https://camperflower.de/keys/v1/push -H 'Content-Type: application/json' \
+  -d '{"key":"&lt;Push-Schlüssel&gt;","ch":"urgent","title":"Wasser im Keller","body":"Sensor 2"}'</code></pre>
+          <ul class="ticks">
+            <li><code>ch</code>: <code>urgent</code> → Kanal <span class="ui">Dringend</span> (sofort, mit Ton), sonst <span class="ui">Mitteilungen</span>. Ton und „Nicht stören“ stellst du je Kanal in Android ein.</li>
+            <li><code>url</code> (optional): eine Adresse aus einem deiner Einträge – Antippen der Benachrichtigung öffnet ihn dort.</li>
+            <li>Bis zu 120 Nachrichten je Stunde; Titel bis 120, Text bis 2000 Zeichen.</li>
+          </ul>
+          <div class="note"><svg><use href="#i-info"/></svg><p>Die Zustellung läuft über Google Firebase Cloud Messaging und unseren Schlüsseldienst, der den Text nur durchreicht und nicht speichert. Ausgeschaltet hat HomeHyrax keinen Kontakt zu Google. Braucht die Google-Play-Dienste. Mehr in der <a href="https://camperflower.de/homehyrax-datenschutz/">Datenschutzerklärung</a>, Schnittstelle im <a href="https://github.com/matthiasharzheim/homehyrax/blob/main/keyserver/README.md">README des Schlüsseldienstes</a>.</p></div>
 </div></details>
     </div>
   </div>
