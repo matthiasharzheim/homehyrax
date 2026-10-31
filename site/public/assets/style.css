@@ -1,4 +1,8 @@
 /* HomeHyrax – Webseite. Look wie die Store-Bilder: Schiefergrund, tuerkise Leiterbahnen, Metall-Schrift, Glas-Karten */
+/* Schriften selbst gehostet (keine Abrufe bei Google, OFL in fonts/OFL.txt), Teilmenge latin */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/inter.woff2) format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 600 800; font-display: swap; src: url(fonts/montserrat.woff2) format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 600; font-display: swap; src: url(fonts/jetbrains-mono.woff2) format('woff2'); }
 :root {
   --bg: #161b21;
   --bg-2: #1b2128;
@@ -41,6 +45,7 @@ pre {
 pre code { background: none; border: 0; padding: 0; font-size: .86em; }
 pre .c { color: #6f7c88; }
 .wrap { width: min(var(--wrap), 100% - 32px); margin-inline: auto; }
+[hidden] { display: none !important; }
 .skip { position: absolute; left: -999px; }
 .skip:focus { left: 16px; top: 16px; z-index: 100; background: var(--cyan); color: #000; padding: 8px 14px; border-radius: 8px; }
 
@@ -387,3 +392,71 @@ address { font-style: normal; }
   .btn { padding: 12px 18px; }
   .brand span { display: none; }
 }
+
+/* ---------- Landeseite /rollup1 (QR-Code des Roll-Ups) ---------- */
+.btn-sm { padding: 8px 14px; font-size: 14.5px; border-radius: 11px; gap: 7px; white-space: nowrap; }
+.btn-sm svg { width: 18px; height: 18px; }
+.lp .top .btn-sm { margin-left: 8px; }
+.lp h1 .orange { background: none; -webkit-text-fill-color: #f7931d; color: #f7931d; }
+.actions { display: grid; gap: 12px; max-width: 520px; }
+.action {
+  display: flex; align-items: center; gap: 16px; width: 100%; padding: 14px 18px; border-radius: 18px; text-align: left;
+  background: linear-gradient(180deg, #2a323b, #222930); border: 1px solid var(--line); color: var(--text);
+  font: inherit; cursor: pointer; transition: transform .15s, background .15s, box-shadow .15s;
+}
+.action:hover { text-decoration: none; transform: translateY(-1px); background: #2e3740; }
+.action b { display: block; font: 700 19px/1.2 var(--head); }
+.action small { display: block; color: var(--muted); font-size: 14.5px; margin-top: 2px; }
+.a-ico { flex: none; width: 50px; height: 50px; border-radius: 14px; display: grid; place-items: center; background: var(--cyan-soft); color: var(--cyan); }
+.a-ico svg { width: 26px; height: 26px; }
+.action.main { background: var(--cyan); border-color: transparent; color: #071317; box-shadow: 0 0 0 1px rgba(63, 216, 234, .4), 0 10px 34px rgba(63, 216, 234, .28); }
+.action.main small { color: #0b3940; }
+.action.main .a-ico { background: rgba(7, 19, 23, .14); color: #071317; }
+.action.main:hover { background: #5fe0ef; }
+.ios-note { max-width: 520px; }
+/* Szene wie auf dem Roll-Up: Gemini-Bild, davor das Handy mit der App am Anfang des Tunnels, Etiketten */
+.szene { position: relative; margin: 0; width: 100%; max-width: 470px; justify-self: center; aspect-ratio: 900 / 1205;
+  border-radius: 26px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 40px 80px rgba(0, 0, 0, .5), 0 0 60px rgba(247, 147, 29, .14); }
+.szene-bild { width: 100%; height: 100%; object-fit: cover; }
+.szene-handy { position: absolute; left: 4%; top: 23%; width: 32%; aspect-ratio: 9 / 18.6; padding: 1.4%; border-radius: 14%/6.8%;
+  background: linear-gradient(145deg, #9aa6b2, #3b444e 30%, #1a1f25 55%, #6f7b87);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55), 0 0 34px rgba(247, 147, 29, .55); }
+.szene-handy img { width: 100%; height: 100%; object-fit: cover; object-position: top; border-radius: 11%/5.3%; }
+.etikett { position: absolute; padding: 5px 12px; border-radius: 30px; background: rgba(15, 18, 22, .86); color: #fff;
+  font: 700 clamp(12px, 1.5vw, 15px) var(--head); white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
+.e-tunnel { right: 4%; top: 39%; color: #f7931d; }
+.e-du { left: 3%; top: 74.5%; }
+.e-camper { right: 4%; top: 79%; }
+.szene figcaption { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: rgba(255, 255, 255, .75); text-shadow: 0 1px 3px #000; }
+.cando .card h3 { margin-top: 2px; }
+.three.easy { margin-bottom: 20px; }
+.three.easy p { font-size: 16.5px; }
+.needs { display: flex; gap: 10px; align-items: flex-start; justify-content: center; max-width: 760px; margin: 22px auto 0; color: var(--muted); }
+.needs svg { flex: none; width: 20px; height: 20px; color: var(--cyan); margin-top: 3px; }
+.center-cta { text-align: center; margin: 22px 0 0; }
+.center-facts { justify-content: center; text-align: left; gap: 8px 22px; }
+.play-badge { display: inline-flex; align-items: center; }
+.play-badge img { height: 56px; width: auto; }
+.shop-hint { display: flex; align-items: flex-start; gap: 10px; max-width: 620px; margin: 26px auto 0; color: var(--muted); text-align: left; }
+.shop-hint svg { flex: none; width: 22px; height: 22px; color: var(--gold); margin-top: 2px; }
+/* Leiterbahnen auf der Landeseite schwach, hinter Text kaum sichtbar */
+.lp .circuit { opacity: .3; }
+.lp .final .circuit { opacity: .18; }
+@media (max-width: 880px) {
+  .lp .top .btn-sm { margin-left: auto; }
+  .lp .menu-btn { margin-left: 8px; }
+}
+@media (max-width: 560px) {
+  .lp .hero { padding-top: 24px; }
+  .szene-handy { width: 42%; left: 3%; top: 19%; }
+  .e-du { top: 85%; }
+  .e-tunnel { top: 37%; }
+  .lp .brand span { display: inline; font-size: 17px; }
+  .action b { font-size: 17.5px; }
+  .lp .cando { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .lp .cando .card { padding: 18px 16px; }
+  .lp .cando h3 { font-size: 17px; }
+  .lp .cando p { font-size: 14.5px; }
+  .needs { justify-content: flex-start; }
+}
+@media (max-width: 380px) { .lp .brand span { display: none; } }

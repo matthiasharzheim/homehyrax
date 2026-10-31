@@ -120,6 +120,36 @@
     var starts = document.querySelectorAll("[data-play]");
     for (var k = 0; k < starts.length; k++) starts[k].addEventListener("click", play);
   }
+  // Landeseite: Teilen ueber das Teilen-Menue des Handys, sonst Link kopieren
+  var shares = document.querySelectorAll("[data-share]");
+  function hint(text) {
+    var hs = document.querySelectorAll("[data-share-hint]");
+    for (var i = 0; i < hs.length; i++) {
+      if (!hs[i].getAttribute("data-orig")) hs[i].setAttribute("data-orig", hs[i].textContent);
+      hs[i].textContent = text;
+    }
+    setTimeout(function () { for (var i = 0; i < hs.length; i++) hs[i].textContent = hs[i].getAttribute("data-orig"); }, 3000);
+  }
+  function copy(url) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () { hint("Link kopiert"); }, function () { hint(url); });
+    } else hint(url);
+  }
+  for (var s = 0; s < shares.length; s++) shares[s].addEventListener("click", function () {
+    var url = location.origin + location.pathname;
+    var data = { title: "HomeHyrax", text: "Mit dem Handy direkt in deinen Camper – HomeHyrax, kostenlos für Android:", url: url };
+    if (navigator.share) navigator.share(data).catch(function (e) { if (e && e.name !== "AbortError") copy(url); });
+    else copy(url);
+  });
+
+  // iPhone/iPad: ehrlicher Hinweis statt Play-Knopf (iPadOS meldet sich als Mac mit Touch)
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var iosNote = document.querySelector(".ios-note");
+  if (ios && iosNote) {
+    iosNote.hidden = false;
+    var main = document.querySelector(".action.main");
+    if (main) main.querySelector("small").textContent = "Nur für Android – siehe Hinweis";
+  }
 
   // Link auf einen aufklappbaren Abschnitt (z. B. #push aus der App): aufklappen und hinscrollen
   function openHash() {
