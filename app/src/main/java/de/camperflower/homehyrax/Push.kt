@@ -19,6 +19,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import org.json.JSONObject
+import java.net.URI
 import java.util.concurrent.TimeUnit
 
 /**
@@ -254,7 +255,34 @@ object Push {
      */
     fun entryFor(apps: List<WebApp>, url: String): WebApp? {
         if (!safeUrl(url)) return null
-        return apps.firstOrNull { !it.isGuest && !it.isAction && !it.isCamera && MainActivity.sameOrigin(it.url, url) }
+        // mehrere Eintraege auf demselben Geraet (z. B. /aufgaben und /): der, dessen Pfad am besten passt;
+        // bei Gleichstand der erste (wie bisher)
+        return apps.filter { !it.isGuest && !it.isAction && !it.isCamera && MainActivity.sameOrigin(it.url, url) }
+            .maxByOrNull { pathScore(it.url, url) }
+    }
+
+    private fun uri(s: String): URI? = runCatching { URI(s) }.getOrNull()
+
+    private fun pathOf(u: URI): String = u.rawPath.orEmpty().trimEnd('/')
+
+    /** Wie gut der Pfad eines Eintrags zur Adresse passt: Laenge des gemeinsamen Pfad-Anfangs (ganze Abschnitte), 0 = gar nicht */
+    fun pathScore(entryUrl: String, url: String): Int {
+        val e = uri(entryUrl)?.let(::pathOf) ?: return 0
+        val p = uri(url)?.let(::pathOf) ?: return 0
+        return if (p == e || p.startsWith("$e/")) e.length + 1 else 0
+    }
+
+    /**
+     * Startadresse fuer eine Adresse aus einer Benachrichtigung: dieselbe Seite wie der Eintrag ohne eigene Parameter ->
+     * die Adresse des Eintrags (behaelt z. B. dessen ?k=..., das ein Absender nicht kennt und nicht ueber Google schicken
+     * soll), eine Sprungmarke (#...) der Nachricht kommt dazu. Sonst die Adresse, wie sie ist.
+     */
+    fun startUrl(entryUrl: String, url: String): String {
+        val p = uri(url) ?: return url
+        val e = uri(entryUrl) ?: return url
+        if (p.rawQuery != null || pathOf(p) != pathOf(e)) return url
+        val frag = p.rawFragment
+        return if (frag.isNullOrEmpty()) entryUrl else entryUrl.substringBefore('#') + "#" + frag
     }
 }
 

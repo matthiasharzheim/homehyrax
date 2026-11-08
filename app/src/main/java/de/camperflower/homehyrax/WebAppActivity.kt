@@ -288,8 +288,13 @@ class WebAppActivity : FragmentActivity() {
             fresh == null -> { Toast.makeText(this, getString(R.string.web_gone), Toast.LENGTH_LONG).show(); finishAndRemoveTask() }
             fresh != app -> recreate()
             else -> pushUrl(intent).also { intent.removeExtra(EXTRA_START_URL) }?.let { url ->
-                // geladen und entsperrt: gleich dorthin, sonst beim naechsten Laden bzw. nach dem Entsperren
-                if (loadedOnce && !locked && phase !is Phase.Connecting) web.loadUrl(url) else startUrl = url
+                // Immer merken. onNewIntent kommt aus dem Hintergrund VOR onStart: dort kann noch ein Neuaufbau (lange
+                // weg, Sperre) folgen, der sonst nur reload() machte und die Adresse verloere - dann holt load() sie,
+                // sonst onStart (pendingStartUrl). Schon sichtbar: sofort, bei Fehlerseite neu verbinden.
+                startUrl = url
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !locked) {
+                    if (phase is Phase.Failed) retry() else pendingStartUrl()
+                }
             }
         }
     }
@@ -297,11 +302,8 @@ class WebAppActivity : FragmentActivity() {
     /** Adresse aus einer Benachrichtigung, nur wenn sie zum Eintrag gehoert (Schema, Host, Port) */
     private fun pushUrl(i: Intent?): String? = i?.getStringExtra(EXTRA_START_URL)
         ?.takeIf { Push.safeUrl(it) && MainActivity.sameOrigin(app.url, it) }
-        ?.let { u ->
-            // gleiche Seite ohne eigene Parameter: Startadresse des Eintrags (behaelt z. B. dessen ?k=...)
-            val p = Uri.parse(u)
-            if (p.query == null && p.fragment == null && p.path.orEmpty().trimEnd('/') == Uri.parse(app.url).path.orEmpty().trimEnd('/')) app.url else u
-        }
+        // gleiche Seite ohne eigene Parameter: Startadresse des Eintrags (behaelt z. B. dessen ?k=...), Sprungmarke dazu
+        ?.let { u -> Push.startUrl(app.url, u) }
 
     /** Sperre aufheben; beim ersten Mal danach verbinden + laden. */
     private fun unlock() {
@@ -391,6 +393,12 @@ class WebAppActivity : FragmentActivity() {
         tunnel?.let { if (holdingTunnel) { Net.release(it.id); holdingTunnel = false } }
     }
 
+    /** Adresse aus einer Benachrichtigung jetzt laden, wenn die Seite steht (sonst uebernimmt sie load()) */
+    private fun pendingStartUrl() {
+        if (!loadedOnce || locked || phase is Phase.Connecting || phase is Phase.Failed) return
+        startUrl?.let { startUrl = null; web.loadUrl(it) }
+    }
+
     private fun load() {
         phase = Phase.Connecting(getString(if (viaTunnel) R.string.web_loading_tunnel else R.string.web_loading))
         awaitingLoad = true
@@ -462,6 +470,8 @@ class WebAppActivity : FragmentActivity() {
         if (startedOnce && hiddenAt > 0 && recheckIfNetworkChanged()) return
         // Routen sind global je Host: eine andere Kachel/Kamera kann sie inzwischen umgestellt haben
         if (loadedOnce) Net.route(app, if (viaTunnel) tunnel?.id else null)
+        // kurz weg und Benachrichtigung angetippt: jetzt dorthin (die Faelle oben laden ueber load())
+        pendingStartUrl()
         val t = tunnel ?: return
         if ((viaTunnel || wantTunnel) && !holdingTunnel) {
             holdTunnel(t)
@@ -702,6 +712,8 @@ class WebAppActivity : FragmentActivity() {
                 afterConnecting()
                 flashBadge()
                 menuAnstoss++   // Menue-Knopf kurz zeigen, damit man weiss, dass es ihn gibt
+                // Benachrichtigung waehrend des Ladens angetippt: jetzt dorthin, nicht erst beim naechsten Laden
+                pendingStartUrl()
             }
         }
 

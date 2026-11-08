@@ -75,6 +75,13 @@ jobs:
           java-version: "17"
           cache: gradle   # Gradle-Abhaengigkeiten zwischen Laeufen behalten (~1-2 min)
 
+      # Gradle selbst laden, mit Wiederholung: ohne Cache (GitHub loescht ihn nach 7 Tagen ohne Lauf) brach der
+      # Download am 08.11.2026 achtmal mit Zeitlimit/502/504 ab - ein Aussetzer soll nicht den ganzen Bau kosten
+      - name: Gradle laden
+        run: |
+          for i in 1 2 3 4 5; do ./gradlew --version --console=plain && exit 0; echo "Versuch $i gescheitert, neuer Versuch in 60 s"; sleep 60; done
+          exit 1
+
       # Android-SDK ist auf ubuntu-latest vorinstalliert ($ANDROID_HOME);
       # android-actions/setup-android scheitert am veralteten Paket "tools".
       - name: SDK + NDK
