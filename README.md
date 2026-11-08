@@ -29,6 +29,9 @@ only inside this app, only for the addresses of your tiles and only while they a
 - WireGuard keys and passwords encrypted with AES-GCM using an Android Keystore key; the Tailscale device key is
   stored by tsnet unencrypted in the app folder, protected by the app sandbox and Android file encryption; no cloud backup
 - Optional lock (fingerprint/face/PIN) per tile, switches locked by default
+- **Confirm with device key** (optional, per website tile): the page can ask for a confirmation; the app shows its
+  own dialog and signs it with a per-tile ECDSA key from the Android Keystore – two-factor approval for actions on
+  your own devices, also with IP addresses and self-signed certificates ([for page developers](docs/device-key.md))
 - Built-in symbols or your own image; **share** all entries via QR code or file
 - Diagnostics: "Test connection" (for Tailscale with route, device, relay, ping, TCP), crash report on the next
   start (Kotlin + Go, local only), open-source licenses in the app

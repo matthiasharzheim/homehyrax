@@ -132,6 +132,7 @@ import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.core.graphics.drawable.toBitmap
@@ -865,6 +866,13 @@ class MainActivity : FragmentActivity() {
         var desktop by rememberSaveable { mutableStateOf(base.desktop) }
         var mic by rememberSaveable { mutableStateOf(base.mic) }
         var micTouched by rememberSaveable { mutableStateOf(false) }
+        var confirm by rememberSaveable { mutableStateOf(base.confirm) }
+        var confirmAuth by rememberSaveable { mutableStateOf(base.confirmAuth) }
+        // oeffentlicher Geraeteschluessel (SPKI) zur Anzeige; angelegt, sobald der Schalter an ist
+        var keySpki by remember { mutableStateOf<ByteArray?>(null) }
+        var keyVersion by remember { mutableIntStateOf(0) }
+        var askRenewKey by remember { mutableStateOf(false) }
+        var askDeleteKey by remember { mutableStateOf(false) }
         var fullscreen by rememberSaveable { mutableStateOf(base.fullscreen) }
         var advanced by rememberSaveable { mutableStateOf(false) }
         var symbol by rememberSaveable { mutableStateOf(base.symbol) }
@@ -923,7 +931,8 @@ class MainActivity : FragmentActivity() {
                 else -> normalizeUrl(url)
             }
             return base.copy(name = name.trim(), url = fullUrl, tunnelId = if (remote) tunnelId else null, alwaysTunnel = remote && always,
-                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)), fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
+                color = color, keepScreenOn = screenOn, desktop = desktop && kind == KIND_WEB, mic = mic && kind == KIND_WEB && (micTouched || sameOrigin(base.url, fullUrl)),
+                confirm = confirm && kind == KIND_WEB, confirmAuth = confirmAuth && confirm && kind == KIND_WEB, fullscreen = fullscreen, symbol = symbol, kind = kind, action = act, requireAuth = needAuth)
         }
 
         /** Prueft und speichert; null = Eingabe unvollstaendig (Hinweis wurde gezeigt). */
@@ -937,7 +946,11 @@ class MainActivity : FragmentActivity() {
                 toast(getString(R.string.main_err_local_address)); return null
             }
             val ok = safeStore {
+                // Schalter an, Karte nie angezeigt: Schluessel vor dem Speichern anlegen (scheitert er, bleibt alles beim Alten)
+                if (app.confirm && !DeviceKey.exists(app.id)) DeviceKey.ensure(app.id)
                 store.saveApp(app)
+                // Funktion aus: Geraeteschluessel weg (der Server nimmt keine Bestaetigungen mehr an)
+                if (!app.confirm) DeviceKey.delete(app.id)
                 if (iconChanged) store.saveIcon(app.id, icon)
                 // gesperrte Kamera: vorhandenes Kachelbild weg
                 if (app.isCamera && app.requireAuth) store.snapshotFile(app.id).delete()
@@ -1223,6 +1236,23 @@ class MainActivity : FragmentActivity() {
                         IconSwitch(Icons.Filled.LightMode, stringResource(R.string.main_keep_screen_on), screenOn) { screenOn = it }
                         IconSwitch(Icons.Filled.Computer, stringResource(R.string.main_desktop_site), desktop) { desktop = it }
                         IconSwitch(Icons.Filled.Mic, stringResource(R.string.main_mic), mic) { mic = it; micTouched = true }
+                        IconSwitch(Icons.Filled.Key, stringResource(R.string.main_confirm), confirm) { on ->
+                            // vorhandenen Schluessel abschalten = loeschen: erst nachfragen (und bei Fingerabdruck-Pflicht entsperren)
+                            if (on) confirm = true
+                            else if (existing?.confirm == true) { if (existing.confirmAuth) guard { askDeleteKey = true } else askDeleteKey = true }
+                            else confirm = false
+                        }
+                        if (confirm) DeviceKeyCard(base.id, keyVersion, keySpki, { keySpki = it }, { confirm = false },
+                            onCopy = { spki ->
+                                getSystemService(android.content.ClipboardManager::class.java)
+                                    ?.setPrimaryClip(android.content.ClipData.newPlainText("HomeHyrax", DeviceKey.pem(spki)))
+                                toast(getString(R.string.main_confirm_copied))
+                            },
+                            onRenew = { askRenewKey = true })
+                        if (confirm) IconSwitch(Icons.Filled.Fingerprint, stringResource(R.string.main_confirm_auth), confirmAuth) { on ->
+                            // Pflicht abschalten: erst entsperren (sonst koennte jeder mit dem offenen Handy sie abschalten)
+                            if (!on && existing?.confirmAuth == true) guard { confirmAuth = false } else confirmAuth = on
+                        }
                     }
                 }
                 if (Shortcuts.pinSupported(ctx)) {
@@ -1247,6 +1277,25 @@ class MainActivity : FragmentActivity() {
                 }
                 Spacer(Modifier.height(32.dp))
             }
+            if (askRenewKey) AlertDialog(
+                onDismissRequest = { askRenewKey = false },
+                title = { Text(stringResource(R.string.main_confirm_renew_title)) },
+                text = { Text(stringResource(R.string.main_confirm_renew_text)) },
+                confirmButton = { TextButton(onClick = {
+                    askRenewKey = false
+                    val renew: () -> Unit = { keySpki = null; DeviceKey.delete(base.id); keyVersion++ }
+                    if (existing?.confirmAuth == true) guard(renew) else renew()
+                }) { Text(stringResource(R.string.main_confirm_renew)) } },
+                dismissButton = { TextButton(onClick = { askRenewKey = false }) { Text(stringResource(R.string.main_cancel)) } },
+            )
+            if (askDeleteKey) AlertDialog(
+                onDismissRequest = { askDeleteKey = false },
+                title = { Text(stringResource(R.string.main_confirm_delete_title)) },
+                text = { Text(stringResource(R.string.main_confirm_delete_text)) },
+                confirmButton = { TextButton(onClick = { askDeleteKey = false; confirm = false }) {
+                    Text(stringResource(R.string.main_delete), color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { askDeleteKey = false }) { Text(stringResource(R.string.main_cancel)) } },
+            )
         }
         if (iconMenu) AlertDialog(
             onDismissRequest = { iconMenu = false },
@@ -1683,6 +1732,36 @@ class MainActivity : FragmentActivity() {
                 Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (open) Text(body, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+
+    /**
+     * Geraeteschluessel im Editor: legt ihn bei Bedarf an (Schalter an), zeigt den kurzen Fingerabdruck zum Vergleichen
+     * mit dem Server, "Schluessel kopieren" (PEM) und "Neuer Schluessel".
+     */
+    @Composable
+    private fun DeviceKeyCard(appId: String, version: Int, spki: ByteArray?, onKey: (ByteArray) -> Unit, onFailed: () -> Unit,
+                              onCopy: (ByteArray) -> Unit, onRenew: () -> Unit) {
+        LaunchedEffect(appId, version) {
+            val k = withContext(Dispatchers.IO) { runCatching { DeviceKey.ensure(appId) }.getOrNull() }
+            if (k != null) onKey(k) else { toast(getString(R.string.main_confirm_failed)); onFailed() }
+        }
+        Column(Modifier.fillMaxWidth().padding(start = 40.dp, bottom = 4.dp)) {
+            Text(stringResource(R.string.main_confirm_hint), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.main_confirm_key, spki?.let { DeviceKey.fingerprint(it) } ?: "…"),
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { spki?.let(onCopy) }, enabled = spki != null) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.main_confirm_copy))
+                }
+                TextButton(onClick = onRenew, enabled = spki != null) {
+                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.main_confirm_renew))
+                }
+            }
         }
     }
 

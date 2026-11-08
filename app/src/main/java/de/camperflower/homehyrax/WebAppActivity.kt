@@ -158,7 +158,7 @@ class WebAppActivity : FragmentActivity() {
         set(v) {
             lockedState = v
             // offene Mikrofon-Rueckfrage nicht hinter der Sperre stehen lassen (Schliessen = ablehnen)
-            if (v) { micDialog?.dismiss(); menuAnstoss = 0; menuOpen = false }
+            if (v) { micDialog?.dismiss(); confirmDialog?.dismiss(); menuAnstoss = 0; menuOpen = false }
             if (::web.isInitialized) {
                 web.visibility = if (v) View.INVISIBLE else View.VISIBLE
                 if (v) web.onPause() else web.onResume()
@@ -177,6 +177,12 @@ class WebAppActivity : FragmentActivity() {
         if (ok && micAllowed(r)) r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
         else { r.deny(); if (!ok) Toast.makeText(this, getString(R.string.web_mic_no_permission), Toast.LENGTH_LONG).show() }
     }
+
+    // Bestaetigen mit Geraeteschluessel (window.HomeHyraxConfirm): offener Dialog, eine Anfrage gleichzeitig
+    private var confirmDialog: android.app.AlertDialog? = null
+    private var confirmBusy = false
+    /** nach "Bestaetigen": Dialog zu, Unterschrift (ggf. nach Entsperren) laeuft noch - nicht als Abbruch werten */
+    private var signing = false
 
     // Dateiauswahl (<input type=file>): offene Anfrage der Seite, Foto-Ziel der Kamera
     private var fileCallback: ValueCallback<Array<Uri>>? = null
@@ -455,7 +461,9 @@ class WebAppActivity : FragmentActivity() {
             if (fresh != app) { recreate(); return }
         }
         // nach mehr als 1 min im Hintergrund erneut sperren
-        if (app.requireAuth && !locked && hiddenAt > 0 &&
+        // nicht waehrend einer Bestaetigung: Android 8 zeigt die PIN-Abfrage als eigene Activity (onStop) - ein neues
+        // unlock() ersetzte deren Rueckmeldung, die Bestaetigung hinge dann fuer immer auf "busy"
+        if (app.requireAuth && !locked && !signing && hiddenAt > 0 &&
             android.os.SystemClock.elapsedRealtime() - hiddenAt > RELOCK_MS) {
             locked = true
             unlock()
@@ -490,12 +498,15 @@ class WebAppActivity : FragmentActivity() {
         // (ab Android 9 waere es dort stumm). Die Seite fragt beim naechsten Mal neu an. Immer aufrufen (ohne Spuren
         // tut es nichts): auch eine Freigabe, die gerade noch unterwegs ist, endet so (MIC_JS prueft "hidden").
         if (::web.isInitialized) web.evaluateJavascript(MIC_STOP_JS, null)
+        // offene Bestaetigung nicht im Hintergrund stehen lassen (Schliessen = abgebrochen)
+        confirmDialog?.dismiss()
         releaseTunnel()
     }
 
     override fun onDestroy() {
         releaseTunnel()   // falls ein Verbindungsaufbau erst nach onStop fertig wurde
         micDialog?.dismiss()   // offene Mikrofon-Anfrage ablehnen
+        confirmDialog?.dismiss()
         fileCallback?.onReceiveValue(null); fileCallback = null
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
@@ -524,6 +535,7 @@ class WebAppActivity : FragmentActivity() {
         }
         // App-Version fuer die Seite/den Dienst erkennbar (z. B. im Protokoll des Dienstes)
         settings.userAgentString = settings.userAgentString + " HomeHyrax/" + BuildConfig.VERSION_NAME
+        confirmBridge(this)
         webChromeClient = Chrome()
         webViewClient = Client()
         setDownloadListener { url, ua, disposition, mime, _ -> download(url, ua, disposition, mime) }
@@ -687,6 +699,103 @@ class WebAppActivity : FragmentActivity() {
         }
         micRequest = r
         askMicPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    /**
+     * Bestaetigen mit Geraeteschluessel: nur fuer selbst angelegte Webseiten-Eintraege mit eingeschalteter Funktion,
+     * nur fuer den Ursprung der eingetragenen Adresse und nur die Hauptseite - per Nachrichtenkanal mit Ursprungsregel
+     * (nicht addJavascriptInterface, das saehen auch eingebettete fremde Seiten). Alte WebViews: keine Bruecke.
+     */
+    private fun confirmBridge(w: WebView) {
+        if (app.kind != KIND_WEB || app.isGuest || !app.confirm) return
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
+            !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        val own = ConfirmBridge.origin(Uri.parse(app.url)) ?: return
+        runCatching {
+            WebViewCompat.addWebMessageListener(w, ConfirmBridge.CHANNEL, setOf(own)) { _, message, source, mainFrame, reply ->
+                val req = ConfirmBridge.parse(message.data) ?: return@addWebMessageListener
+                val answer: (String) -> Unit = { json -> runCatching { reply.postMessage(ConfirmBridge.reply(req.id, json)) } }
+                val visible = !locked && !isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                when {
+                    !mainFrame || ConfirmBridge.origin(source) != own -> answer(ConfirmBridge.error("denied"))
+                    !visible -> answer(ConfirmBridge.error("not_visible"))
+                    req.op == "publicKey" -> lifecycleScope.launch {
+                        val spki = withContext(Dispatchers.IO) { runCatching { DeviceKey.publicKey(app.id) }.getOrNull() }
+                        answer(spki?.let { ConfirmBridge.keyInfo(it).toString() } ?: ConfirmBridge.error("no_key"))
+                    }
+                    req.op != "request" -> answer(ConfirmBridge.error("invalid"))
+                    !ConfirmBridge.validText(req.text) || !ConfirmBridge.validChallenge(req.challenge) -> answer(ConfirmBridge.error("invalid"))
+                    confirmBusy -> answer(ConfirmBridge.error("busy"))
+                    else -> askConfirm(own, req, answer)
+                }
+            }
+            WebViewCompat.addDocumentStartJavaScript(w, ConfirmBridge.JS, setOf(own))
+        }
+    }
+
+    /**
+     * Eigener Dialog der App (Name des Eintrags, Adresse, Text der Seite) - die Seite kann ihn weder faelschen noch
+     * selbst bestaetigen. "Bestaetigen" ist kurz gesperrt, damit ein Tipp, der der Seite galt, nicht versehentlich
+     * bestaetigt. Optional danach Fingerabdruck/Gesicht/PIN, dann Unterschrift mit dem Geraeteschluessel.
+     */
+    private fun askConfirm(origin: String, req: ConfirmBridge.Request, answer: (String) -> Unit) {
+        confirmBusy = true
+        var answered = false
+        val finish = { json: String -> if (!answered) { answered = true; confirmBusy = false; answer(json) } }
+        // Text der Seite, darunter klein die Adresse, von der die Anfrage kommt
+        val from = getString(R.string.web_confirm_from, origin.substringAfter("://"))
+        val msg = android.text.SpannableStringBuilder(req.text).append("\n\n")
+        val start = msg.length
+        msg.append(from)
+        msg.setSpan(android.text.style.RelativeSizeSpan(0.8f), start, msg.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val dlg = android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.web_confirm_title, app.name))
+            .setMessage(msg)
+            .setPositiveButton(getString(R.string.web_confirm_ok), null)
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            // Abbrechen, Zurueck, Sperre, Hintergrund: abgebrochen (laeuft schon die Unterschrift, antwortet die)
+            .setOnDismissListener { confirmDialog = null; if (!signing) finish(ConfirmBridge.error("cancelled")) }
+            .create()
+        dlg.setCanceledOnTouchOutside(false)
+        dlg.setOnShowListener {
+            val ok = dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            ok.isEnabled = false
+            ok.filterTouchesWhenObscured = true   // nicht ueber das Fenster einer anderen App hinweg bestaetigen
+            ok.postDelayed({ ok.isEnabled = true }, CONFIRM_ARM_MS)
+            ok.setOnClickListener {
+                signing = true
+                dlg.dismiss()
+                val sign = { signConfirm(origin, req) { json -> signing = false; finish(json) } }
+                if (!app.confirmAuth) sign()
+                else unlocker.ask(app.name, getString(R.string.web_confirm_auth)) { done, err ->
+                    when {
+                        done && !locked && !isFinishing && !isDestroyed -> sign()
+                        done -> { signing = false; finish(ConfirmBridge.error("not_visible")) }
+                        else -> {
+                            signing = false
+                            if (err != null) Toast.makeText(this, err, Toast.LENGTH_LONG).show()
+                            finish(ConfirmBridge.error(if (err == null) "cancelled" else "auth_failed"))
+                        }
+                    }
+                }
+            }
+        }
+        confirmDialog = dlg
+        dlg.show()
+    }
+
+    private fun signConfirm(origin: String, req: ConfirmBridge.Request, done: (String) -> Unit) {
+        lifecycleScope.launch {
+            val json = withContext(Dispatchers.IO) {
+                runCatching {
+                    val spki = DeviceKey.publicKey(app.id) ?: return@runCatching ConfirmBridge.error("no_key")
+                    val data = ConfirmBridge.canonical(origin, req.challenge, req.text).toByteArray(Charsets.UTF_8)
+                    val der = DeviceKey.sign(app.id, data) ?: return@runCatching ConfirmBridge.error("no_key")
+                    ConfirmBridge.signed(spki, origin, der)
+                }.getOrElse { ConfirmBridge.error("internal") }
+            }
+            done(json)
+        }
     }
 
     private inner class PullBridge {
@@ -1059,6 +1168,8 @@ class WebAppActivity : FragmentActivity() {
         private const val REFRESH_AFTER_MS = 30 * 60_000L
         /** nach einem Netzwechsel so lange warten, bis das neue Netz steht (WLAN weg -> Mobilfunk kommt nach) */
         private const val NET_SETTLE_MS = 1_500L
+        /** "Bestaetigen" erst nach dieser Zeit antippbar (Tipp auf die Seite soll nicht versehentlich bestaetigen) */
+        private const val CONFIRM_ARM_MS = 800L
     }
 }
 

@@ -31,6 +31,10 @@ sie benutzt werden.
   Tailscale-Geräteschlüssel legt tsnet unverschlüsselt im App-Ordner ab, geschützt durch App-Sandbox und
   Android-Dateiverschlüsselung; kein Cloud-Backup
 - Optionale Sperre (Fingerabdruck/Gesicht/PIN) je Kachel, Schalter standardmäßig gesperrt
+- **Bestätigen mit Geräteschlüssel** (optional, je Webseiten-Kachel): Die Seite kann eine Bestätigung anfordern;
+  die App zeigt einen eigenen Dialog und unterschreibt mit einem ECDSA-Schlüssel je Kachel aus dem Android-Keystore –
+  Zwei-Faktor-Freigabe für Aktionen an eigenen Geräten, auch mit IP-Adresse und selbstsigniertem Zertifikat
+  ([für Seitenbetreiber](docs/geraeteschluessel.md))
 - Fertige Symbole oder eigenes Bild; **Teilen** aller Einträge per QR-Code oder Datei
 - Diagnose: „Verbindung testen" (bei Tailscale mit Route, Gerät, Relay, Ping, TCP), Absturzbericht beim nächsten
   Start (Kotlin + Go, nur lokal), Open-Source-Lizenzen in der App

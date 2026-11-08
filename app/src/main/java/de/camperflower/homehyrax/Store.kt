@@ -43,6 +43,10 @@ data class WebApp(
     val desktop: Boolean = false,
     /** Seite darf das Mikrofon nutzen (getUserMedia), nur die eigene Adresse; gilt nur auf diesem Handy, wird nicht geteilt */
     val mic: Boolean = false,
+    /** Seite darf Bestaetigungen mit dem Geraeteschluessel anfordern (DeviceKey/ConfirmBridge); nur dieses Handy, nicht geteilt */
+    val confirm: Boolean = false,
+    /** vor jeder solchen Bestaetigung zusaetzlich Fingerabdruck/Gesicht/PIN verlangen */
+    val confirmAuth: Boolean = false,
     /** Vollbild (Statusleiste ausgeblendet); aus = Statusleiste bleibt sichtbar */
     val fullscreen: Boolean = true,
     /** "Immer VPN": auch zuhause ueber den Tunnel, nie direkt (nur mit tunnelId). Aus = "Smart VPN". */
@@ -203,6 +207,8 @@ class Store(private val ctx: Context) {
             keepScreenOn = o.optBoolean("screenOn"),
             desktop = o.optBoolean("desk"),
             mic = o.optBoolean("mic"),
+            confirm = o.optBoolean("conf"),
+            confirmAuth = o.optBoolean("cauth"),
             fullscreen = o.optBoolean("full", true),
             alwaysTunnel = o.optBoolean("always"),
             trustedCert = o.optString("cert").ifEmpty { null },
@@ -248,6 +254,7 @@ class Store(private val ctx: Context) {
         writeApps(l.items.filter { it.id != id }, l, dropBroken = id)
         iconFile(id).delete()
         snapshotFile(id).delete()
+        DeviceKey.delete(id)
     }
 
     // ---- Kamera: letztes Bild fuer die Kachel (nur lokal, wird nicht geteilt) ----
@@ -276,7 +283,7 @@ class Store(private val ctx: Context) {
                 put("id", it.id); put("name", it.name); put("url", it.url)
                 put("tunnel", it.tunnelId ?: ""); put("color", it.color)
                 put("screenOn", it.keepScreenOn); put("cert", it.trustedCert ?: "")
-                put("desk", it.desktop); put("mic", it.mic); put("full", it.fullscreen); put("always", it.alwaysTunnel)
+                put("desk", it.desktop); put("mic", it.mic); put("conf", it.confirm); put("cauth", it.confirmAuth); put("full", it.fullscreen); put("always", it.alwaysTunnel)
                 put("sym", it.symbol ?: "")
                 put("kind", it.kind)
                 it.guest?.let { g -> put("guest", g) }
