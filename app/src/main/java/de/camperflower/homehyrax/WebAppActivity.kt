@@ -41,6 +41,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +50,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -77,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +90,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -131,6 +136,8 @@ class WebAppActivity : FragmentActivity() {
     private var lastSwipeAt = 0L
     /** lange im Hintergrund, aber noch gesperrt: nach dem Entsperren neu pruefen und laden */
     private var refreshAfterUnlock = false
+    /** dazu neu laden (nur > 30 min Hintergrund); Netzwechsel/Tunnel-Neuaufbau stellen nach dem Entsperren nur den Weg her */
+    private var reloadAfterUnlock = false
 
     private lateinit var app: WebApp
     private var tunnel: Tunnel? = null
@@ -145,6 +152,26 @@ class WebAppActivity : FragmentActivity() {
     private var decidedOn: String? = null
     /** Netzwechsel waehrend des Verbindens: nach Ready/Failed nachpruefen (sonst ginge er verloren) */
     private var recheckPending = false
+    /** Seite steht, Weg wird im Hintergrund neu gewaehlt (Seite bleibt sichtbar, keine Ladeanzeige) */
+    private var refreshing by mutableStateOf(false)
+    /** von Hand angestossen: Band "Verbindung wird geprueft" zeigen */
+    private var refreshManual by mutableStateOf(false)
+    /** Seite steht, aber das Ziel antwortet nicht (Funkloch): Band statt Fehlerseite, letzter Stand bleibt nutzbar */
+    private var offline by mutableStateOf(false)
+    /** nach einem Funkloch wieder erreichbar: Weg umgestellt, Seite bewusst NICHT neu geladen (Band "tippen zum Neuladen") */
+    private var reconnected by mutableStateOf(false)
+    /** Pruefung lief bis in den Hintergrund (Ergebnis unzuverlaessig: Proxy-Passwort gilt wieder): in onStart wiederholen */
+    private var recheckOnStart = false
+    /** Beginn der letzten stillen Pruefung (Netz-Ereignisse bremsen) */
+    private var lastQuietTry = 0L
+    /** letzte von Hand ausgeloeste Pruefung, die "nicht erreichbar" ergab: zweiter Tipp kurz danach laedt trotzdem */
+    private var manualFailedAt = 0L
+    /** startUrl kommt aus einem im Funkloch angetippten Link (nicht aus einer Benachrichtigung) */
+    private var startUrlFromLink = false
+    /** Hauptseite scheiterte direkt, waehrend still geprueft wurde: danach den Tunnel-Rueckfall nachholen */
+    private var fallbackPending = false
+    /** Gast-Fehler aus dem stillen Verbinden (fuer die Fehlerseite, wenn der Zugang gesperrt ist) */
+    private var quietError: String? = null
     /** Adresse aus einer Benachrichtigung (gleicher Ursprung wie der Eintrag): beim naechsten Laden statt der Startseite */
     private var startUrl: String? = null
     private var awaitingLoad = false
@@ -274,7 +301,34 @@ class WebAppActivity : FragmentActivity() {
                 Net.networkChanges.drop(1).collectLatest {
                     delay(NET_SETTLE_MS)
                     // fehlgeschlagen (z. B. Tunnel vor dem Mobilfunk gestartet): im neuen Netz einfach noch einmal
-                    if (phase is Phase.Failed && !locked && decidedOn != null) retry() else recheckIfNetworkChanged()
+                    // Funkloch mit stehender Seite: neues Netz -> gleich nachsehen, ob das Ziel wieder antwortet
+                    // ganz ohne Netz (Mobilfunk-Funkloch, networkKey bleibt "mobile"): stehende Seite gleich als offline
+                    // markieren - Band, Links abfangen - ohne erst zu pruefen
+                    if (!Net.hasNetwork()) { if (loadedOnce && phase == Phase.Ready) { offline = true; reconnected = false } }
+                    else if (offline && refreshing) recheckPending = true   // laufende Pruefung danach wiederholen
+                    // Netz-Ereignisse kommen gern in Schueben: hoechstens alle 10 s eine Funkloch-Pruefung (Gast: Schluesseldienst)
+                    else if (offline) {
+                        val since = android.os.SystemClock.elapsedRealtime() - lastQuietTry
+                        if (since < QUIET_MIN_GAP_MS) delay(QUIET_MIN_GAP_MS - since)   // verschieben, nicht verwerfen
+                        if (!locked) retry(reload = false)
+                    }
+                    else if ((phase is Phase.Failed || offline) && !locked && decidedOn != null) retry(reload = !offline)
+                    else recheckIfNetworkChanged()
+                }
+            }
+        }
+        // Funkloch: in wachsenden Abstaenden nachsehen, ob das Ziel wieder antwortet (Netzwechsel loesen es sofort
+        // aus). Wachsend, weil jeder Versuch bei Gast-Eintraegen auch den Schluesseldienst fragt.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                snapshotFlow { offline }.collectLatest { off ->
+                    var wait = OFFLINE_RETRY_MS
+                    while (off) {
+                        delay(wait)
+                        wait = (wait * 2).coerceAtMost(OFFLINE_RETRY_MAX_MS)
+                        // ganz ohne Netz nicht versuchen - kommt eins, meldet es der Netz-Callback ohnehin
+                        if (!locked && Net.hasNetwork()) retry(reload = false)
+                    }
                 }
             }
         }
@@ -299,7 +353,7 @@ class WebAppActivity : FragmentActivity() {
                 // sonst onStart (pendingStartUrl). Schon sichtbar: sofort, bei Fehlerseite neu verbinden.
                 startUrl = url
                 if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !locked) {
-                    if (phase is Phase.Failed) retry() else pendingStartUrl()
+                    if (phase is Phase.Failed || offline) retry(manual = offline) else pendingStartUrl()
                 }
             }
         }
@@ -320,8 +374,10 @@ class WebAppActivity : FragmentActivity() {
                     locked = false
                     Net.webAppVisible(true, app)   // erst entsperrt: Ziel fuer den Proxy-Ausweichmodus freigeben
                     if (!startedOnce) { startedOnce = true; lifecycleScope.launch { start() } }
-                    else if (refreshAfterUnlock) { refreshAfterUnlock = false; retry() }
-                    else startUrl?.let { startUrl = null; web.loadUrl(it) }
+                    else if (refreshAfterUnlock) { refreshAfterUnlock = false; retry(reload = reloadAfterUnlock).also { reloadAfterUnlock = false } }
+                    // Funkloch: erst pruefen (eine Adresse aus einer Benachrichtigung laedt retry() dann mit)
+                    else if (offline || recheckOnStart) { recheckOnStart = false; retry(manual = startUrl != null) }
+                    else pendingStartUrl()
                 }
                 err == null -> finishAndRemoveTask()   // abgebrochen
                 else -> lockError = err
@@ -400,12 +456,20 @@ class WebAppActivity : FragmentActivity() {
     }
 
     /** Adresse aus einer Benachrichtigung jetzt laden, wenn die Seite steht (sonst uebernimmt sie load()) */
-    private fun pendingStartUrl() {
-        if (!loadedOnce || locked || phase is Phase.Connecting || phase is Phase.Failed) return
-        startUrl?.let { startUrl = null; web.loadUrl(it) }
+    private fun pendingStartUrl(justLoaded: Boolean = false) {
+        // Funkloch: nicht die stehende Seite gegen eine Fehlerseite tauschen - retry() laedt, sobald das Ziel antwortet
+        if (!loadedOnce || locked || offline || refreshing || phase is Phase.Connecting || phase is Phase.Failed) return
+        val url = startUrl ?: return
+        // nur eine andere Sprungmarke derselben Seite (z. B. #aufgabe-12) braucht kein Netz; Seite gerade geladen
+        // ebenso. Sonst erst pruefen (unerkanntes Funkloch: Mobilfunk ohne Durchsatz) - retry() laedt sie dann mit
+        if (justLoaded || url.substringBefore('#') == web.url.orEmpty().substringBefore('#')) { startUrl = null; web.loadUrl(url) }
+        else retry(manual = true)
     }
 
     private fun load() {
+        startUrlFromLink = false
+        offline = false
+        reconnected = false
         phase = Phase.Connecting(getString(if (viaTunnel) R.string.web_loading_tunnel else R.string.web_loading))
         awaitingLoad = true
         val target = startUrl
@@ -415,6 +479,9 @@ class WebAppActivity : FragmentActivity() {
     }
 
     private fun fail(msg: String) {
+        offline = false
+        fallbackPending = false
+        reconnected = false
         phase = Phase.Failed(msg)
         afterConnecting()
     }
@@ -424,7 +491,9 @@ class WebAppActivity : FragmentActivity() {
         if (!recheckPending) return
         recheckPending = false
         // im Hintergrund nichts neu laden - onStart prueft beim Zurueckkommen ohnehin
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) lifecycleScope.launch { recheckIfNetworkChanged() }
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) lifecycleScope.launch {
+            if (offline && !locked) retry(reload = false) else recheckIfNetworkChanged()
+        }
     }
 
     /**
@@ -436,18 +505,108 @@ class WebAppActivity : FragmentActivity() {
     private fun recheckIfNetworkChanged(): Boolean {
         val seen = decidedOn ?: return false
         if (tunnel == null || app.alwaysTunnel) return false
-        if (phase is Phase.Connecting) { recheckPending = true; return false }
+        if (phase is Phase.Connecting || refreshing) { recheckPending = true; return false }
         if (Net.networkKey() == seen) return false
         if (locked) { refreshAfterUnlock = true; return true }
-        retry()
+        // nur den Weg wechseln, nicht neu laden: die Anfragen der Seite gehen danach ueber den neuen Weg (der Proxy
+        // schliesst alte Verbindungen), und ein Neuladen beim Losfahren unterbraeche z. B. Offline-Ton
+        retry(reload = false)
         return true
     }
 
-    private fun retry() {
-        if (phase is Phase.Connecting) return   // sonst liefen zwei start() gleichzeitig
+    /**
+     * manual = "Aktualisieren"/Band angetippt: Pruefung sichtbar machen und immer neu laden.
+     * reload = false: bei stehender Seite nur den Weg (Tunnel/Route) herstellen, nicht neu laden - nach einem
+     * Funkloch oder Tunnel-Neuaufbau braucht die Seite das nicht, und ein Neuladen unterbraeche z. B. Offline-Ton.
+     */
+    private fun retry(manual: Boolean = false, reload: Boolean = true) {
+        if (phase is Phase.Connecting || refreshing) return   // sonst liefen zwei start() gleichzeitig
         fallbackTried = false
         proxyAuthTries = 0
-        lifecycleScope.launch { start() }
+        // Seite steht schon: stehen lassen und erst neu laden, wenn das Ziel antwortet (sonst Fehlerseite im Funkloch)
+        if (loadedOnce && phase == Phase.Ready) lifecycleScope.launch { refreshKeepingPage(manual, reload || manual) }
+        else lifecycleScope.launch { start() }
+    }
+
+    /**
+     * Wie start(), aber fuer eine schon geladene Seite: zuhause/unterwegs neu entscheiden, Tunnel im Hintergrund
+     * aufbauen, kurz anklopfen - und nur neu laden, wenn das Ziel antwortet. Sonst bleibt die Seite mit ihrem
+     * letzten Stand stehen (z. B. offline gespeicherte Inhalte), oben ein Band "Keine Verbindung".
+     */
+    private suspend fun refreshKeepingPage(manual: Boolean, reload: Boolean) {
+        val wasOffline = offline
+        lastQuietTry = android.os.SystemClock.elapsedRealtime()
+        refreshing = true
+        refreshManual = manual
+        quietError = null
+        var ok = false
+        try {
+            runCatching { Net.ensureProxy() }
+            val t = tunnel
+            decidedOn = withContext(Dispatchers.IO) { Net.networkKey() }
+            val where = Net.where(app)
+            ok = when {
+                // direkt wie start(); scheitert es zuhause, Tunnel (wie der Rueckfall bei einem Ladefehler)
+                t == null -> { goDirect(); Net.reachableNow(app) }
+                where.home -> { goDirect(); Net.reachableNow(app) || tunnelQuiet(t) }
+                // unbekanntes WLAN uebersprungen, Tunnel geht nicht -> doch direkt (neuer Router o. ae.)
+                else -> tunnelQuiet(t) || (where.skipped && Net.reachableDirect(app) && run { goDirect(); Net.reachableNow(app) })
+            }
+            // Gastzugang gesperrt/abgelaufen/beendet: Seite nicht weiter zeigen (wie bisher die Fehlerseite)
+            val g = app.guest
+            if (!ok && t != null && t.isGuest && g != null && Guest.state(this, g) != null) {
+                refreshing = false
+                fail(quietError ?: getString(R.string.web_no_answer, app.name))
+                return
+            }
+        } finally {
+            refreshing = false
+            refreshManual = false
+        }
+        if (fallbackPending) {
+            fallbackPending = false
+            tunnel?.let { useTunnel(it) }
+            return
+        }
+        when {
+            // inzwischen anders weitergegangen (Seite selbst neu geladen und gescheitert, Fehlerseite ...): nichts tun
+            phase != Phase.Ready || isFinishing || isDestroyed -> {}
+            // bis in den Hintergrund gelaufen: Ergebnis zaehlt nicht (Proxy-Passwort/Ziel des Ausweichmodus wieder zu)
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) -> recheckOnStart = true
+            // Adresse aus Benachrichtigung/Link wartet: jetzt laden (sonst bliebe sie liegen)
+            // von Hand: zweiter Tipp binnen 10 s nach "nicht erreichbar" laedt trotzdem (sehr langsames Netz, Server, den
+            // die Pruefung nicht versteht) - sonst kaeme man nur ueber Schliessen der Kachel wieder heran
+            !ok && manual && android.os.SystemClock.elapsedRealtime() - manualFailedAt < MANUAL_FORCE_MS -> { manualFailedAt = 0; load() }
+            ok && (reload || startUrl != null) -> load()
+            ok -> { offline = false; if (wasOffline) reconnected = true; afterConnecting() }
+            else -> {
+                offline = true; reconnected = false
+                if (manual) manualFailedAt = android.os.SystemClock.elapsedRealtime()
+                // im Funkloch angetippter Link: nicht Minuten spaeter von selbst dorthin springen (Benachrichtigung bleibt)
+                if (startUrlFromLink) { startUrl = null; startUrlFromLink = false }
+                afterConnecting()
+            }
+        }
+    }
+
+    private fun goDirect() {
+        wantTunnel = false
+        releaseTunnel()
+        Net.route(app, null)
+        viaTunnel = false
+    }
+
+    /** Tunnel aufbauen, ohne die Seite zu verdecken; true = Ziel antwortet darueber */
+    private suspend fun tunnelQuiet(t: Tunnel): Boolean {
+        wantTunnel = true
+        holdTunnel(t)
+        val err = Net.connect(t)
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) releaseTunnel()
+        if (err != null) { quietError = err; return false }
+        Net.route(app, t.id)
+        viaTunnel = true
+        // Tailscale kalt ueber ein DERP-Relay braucht laenger
+        return Net.reachableNow(app, if (t.isTailscale) 12_000 else 8_000)
     }
 
     override fun onStart() {
@@ -471,22 +630,31 @@ class WebAppActivity : FragmentActivity() {
         // lange weg: vielleicht nicht mehr zuhause, Seite veraltet -> neu pruefen und laden (wie "Aktualisieren")
         if (startedOnce && hiddenAt > 0 && android.os.SystemClock.elapsedRealtime() - hiddenAt > REFRESH_AFTER_MS) {
             // gesperrt: nichts still hinter der Sperre aufbauen, retry() nach dem Entsperren holt Tunnel und Route
-            if (locked) { refreshAfterUnlock = true; return }
+            if (locked) { refreshAfterUnlock = true; reloadAfterUnlock = true; return }
             if (phase !is Phase.Connecting) { retry(); return }
         }
         // kurz weg, aber inzwischen in einem anderen Netz (zuhause geoeffnet, unterwegs fortgesetzt)
         if (startedOnce && hiddenAt > 0 && recheckIfNetworkChanged()) return
         // Routen sind global je Host: eine andere Kachel/Kamera kann sie inzwischen umgestellt haben
         if (loadedOnce) Net.route(app, if (viaTunnel) tunnel?.id else null)
-        // kurz weg und Benachrichtigung angetippt: jetzt dorthin (die Faelle oben laden ueber load())
-        pendingStartUrl()
-        val t = tunnel ?: return
-        if ((viaTunnel || wantTunnel) && !holdingTunnel) {
+        val t = tunnel
+        var recheck = false
+        if (t != null && (viaTunnel || wantTunnel) && !holdingTunnel) {
             holdTunnel(t)
-            // Tunnel wurde im Hintergrund abgebaut -> leise neu aufbauen; Gast: jedes Mal beim Schluesseldienst fragen
-            if (viaTunnel && (t.isGuest || !Net.isRunning(t.id))) lifecycleScope.launch {
-                Net.connect(t)?.let { fail(it) } ?: web.reload()
-            }
+            // Tunnel wurde im Hintergrund abgebaut -> leise neu aufbauen; Gast: jedes Mal beim Schluesseldienst fragen.
+            // Bei stehender Seite still, ohne Neuladen; gesperrt erst nach dem Entsperren (sonst sperrt der
+            // Ausweichmodus das Ziel noch -> falsches "offline")
+            if (viaTunnel && (t.isGuest || !Net.isRunning(t.id))) { if (locked) refreshAfterUnlock = true else recheck = true }
+        }
+        // zurueck im Funkloch-Zustand oder Pruefung lief in den Hintergrund: gleich nachsehen
+        if ((offline || recheckOnStart) && !locked) recheck = true
+        if (recheck) {
+            recheckOnStart = false
+            // eine Adresse aus einer Benachrichtigung laedt die Pruefung mit (erst wenn der Weg steht, nicht ins Leere)
+            retry(reload = false)
+        } else {
+            // kurz weg und Benachrichtigung angetippt: jetzt dorthin (die Faelle oben laden ueber load())
+            pendingStartUrl()
         }
     }
 
@@ -808,6 +976,7 @@ class WebAppActivity : FragmentActivity() {
             // neue Seite: alter Wert aus einem Dialog der vorigen Seite gilt nicht mehr (sonst haengt die Sperre,
             // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
             pageBusy = false
+            reconnected = false   // neu geladen: Hinweis "tippen zum Neuladen" erledigt
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -822,7 +991,7 @@ class WebAppActivity : FragmentActivity() {
                 flashBadge()
                 menuAnstoss++   // Menue-Knopf kurz zeigen, damit man weiss, dass es ihn gibt
                 // Benachrichtigung waehrend des Ladens angetippt: jetzt dorthin, nicht erst beim naechsten Laden
-                pendingStartUrl()
+                pendingStartUrl(justLoaded = true)
             }
         }
 
@@ -872,12 +1041,14 @@ class WebAppActivity : FragmentActivity() {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (!request.isForMainFrame) return
+            if (!request.isForMainFrame) { subRequestFailed(request); return }
             awaitingLoad = false
             val t = tunnel
             // Direktversuch gescheitert (z. B. fremdes WLAN mit gleicher IP) -> Tunnel
             if (!viaTunnel && t != null && !fallbackTried) {
                 fallbackTried = true
+                // nicht parallel zur stillen Pruefung: abdecken (Seite ist ohnehin weg) und danach nachholen
+                if (refreshing) { fallbackPending = true; phase = Phase.Connecting(getString(R.string.web_loading_tunnel)); return }
                 lifecycleScope.launch { useTunnel(t) }
                 return
             }
@@ -885,6 +1056,9 @@ class WebAppActivity : FragmentActivity() {
         }
 
         override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+            // Abruf der Seite scheitert am Weg (Fehler-Kopfzeile des eigenen Proxys): still pruefen, siehe subRequestFailed
+            if (!request.isForMainFrame && response.responseHeaders?.keys?.any { it.equals(Wgbridge.ErrorHeader, ignoreCase = true) } == true)
+                subRequestFailed(request)
             // Ausweichmodus nur bei 407 vom EIGENEN Proxy (Kennung) - eine 407 aus dem Heimnetz
             // darf den lokalen Proxy nicht passwortfrei schalten
             if (request.isForMainFrame && response.statusCode == 407 && Net.proxyAuthWorks &&
@@ -912,6 +1086,17 @@ class WebAppActivity : FragmentActivity() {
             val isWeb = u.scheme in listOf("http", "https")
             // Gast-Eintrag: nur die eigene Adresse (nicht weitere Geraete im Heimnetz des Besitzers)
             val sameApp = isWeb && (u.host.equals(app.host, ignoreCase = true) || (!app.isGuest && Hosts.isPrivate(u.host)))
+            // Funkloch: einen Link der Seite nicht ins Leere laden (Fehlerseite ersetzte die stehende Seite) -
+            // erst pruefen, erreichbar -> retry() laedt dann den Link (gleicher Host) bzw. die Seite neu
+            if (sameApp && (offline || !Net.hasNetwork()) && request.isForMainFrame && loadedOnce && phase == Phase.Ready) {
+                offline = true
+                if (!refreshing) {
+                    // gleicher Host: dorthin, sobald erreichbar; anderes Geraet: nur pruefen (Seite nicht verlieren)
+                    if (u.host.equals(app.host, ignoreCase = true)) { startUrl = u.toString(); startUrlFromLink = true; retry(manual = true) }
+                    else retry(reload = false)
+                }
+                return true
+            }
             if (sameApp || u.scheme in listOf("about", "data", "blob", "javascript")) return false
             // Andere Apps nur auf ausdruecklichen Tipp oeffnen, nie per Skript/Weiterleitung
             if (!request.hasGesture()) return true
@@ -927,6 +1112,19 @@ class WebAppActivity : FragmentActivity() {
             }
             return true
         }
+    }
+
+    /**
+     * Ein Abruf der stehenden Seite an ihr eigenes Geraet scheitert (z. B. Mobilfunk ohne Durchsatz - dann meldet
+     * Android kein Netzereignis): still pruefen, damit Band und Link-Schutz stehen, bevor man tippt. Hoechstens alle
+     * 10 s; erreichbar -> nur Weg herstellen, nichts neu laden.
+     */
+    private fun subRequestFailed(request: WebResourceRequest) {
+        if (!request.url.host.equals(app.host, ignoreCase = true)) return
+        if (!loadedOnce || phase != Phase.Ready || offline || refreshing || locked) return
+        if (android.os.SystemClock.elapsedRealtime() - lastQuietTry < QUIET_MIN_GAP_MS) return
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        retry(reload = false)
     }
 
     /** Gehoert die Adresse zur Hauptseite (nur dann die Seite durch eine Meldung ersetzen)? */
@@ -1021,6 +1219,47 @@ class WebAppActivity : FragmentActivity() {
                     Text(verbindungText(), color = Color.White, fontSize = 13.sp)
                 }
             }
+            if (!locked && phase == Phase.Ready && (offline || reconnected || refreshing)) {
+                // oben links (rechts sitzt der Menue-Knopf), wie dieser unter Statusleiste/Kamera-Loch
+                OfflineBand(Modifier.align(Alignment.TopStart).statusBarsPadding().displayCutoutPadding().padding(6.dp))
+            }
+        }
+    }
+
+    /**
+     * Band ueber der stehenden Seite: "Keine Verbindung · letzter Stand" bzw. nach dem Funkloch "Wieder verbunden · tippen zum
+     * Neuladen" (antippen = pruefen und neu laden). Text nur ein paar Sekunden, dann nur das Symbol, damit es nichts
+     * von der Seite verdeckt; stille Pruefungen zeigen nur einen kleinen Kreisel.
+     */
+    @androidx.compose.runtime.Composable
+    private fun OfflineBand(modifier: Modifier) {
+        var full by remember { mutableStateOf(offline || reconnected || refreshManual) }
+        // "tippen zum Neuladen" nicht ewig oben links stehen lassen (dort sitzen oft Zurueck/Menue der Seite)
+        LaunchedEffect(reconnected) { if (reconnected) { delay(RECONNECTED_MS); reconnected = false } }
+        LaunchedEffect(offline, reconnected, refreshManual) {
+            full = offline || reconnected || refreshManual
+            if (full && !refreshManual) { delay(BAND_FULL_MS); full = false }
+        }
+        Row(
+            modifier.heightIn(min = 40.dp).widthIn(min = 40.dp).clip(RoundedCornerShape(50)).background(Color(0xE6202830))
+                .clickable(enabled = !refreshing) { retry(manual = true) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when {
+                refreshing -> CircularProgressIndicator(color = Color(0xFFF2B544), strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                reconnected -> Icon(Icons.Filled.Refresh, stringResource(R.string.web_refresh), tint = Color(0xFFF2B544), modifier = Modifier.size(16.dp))
+                else -> Icon(Icons.Filled.CloudOff, stringResource(R.string.web_retry), tint = Color(0xFFFF8A80), modifier = Modifier.size(16.dp))
+            }
+            AnimatedVisibility(visible = full) {
+                Text(stringResource(when {
+                        refreshManual -> R.string.web_offline_checking
+                        reconnected -> R.string.web_back_online
+                        else -> R.string.web_offline
+                    }),
+                    color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 8.dp))
+            }
         }
     }
 
@@ -1088,8 +1327,8 @@ class WebAppActivity : FragmentActivity() {
                 // nicht waehrend des Verbindens: sonst liefen zwei start() gleichzeitig
                 DropdownMenuItem(text = { Text(stringResource(R.string.web_refresh)) },
                     leadingIcon = { Icon(Icons.Filled.Refresh, null) },
-                    enabled = phase !is Phase.Connecting,
-                    onClick = { open = false; retry() })
+                    enabled = phase !is Phase.Connecting && !refreshing,
+                    onClick = { open = false; retry(manual = true) })
                 // Gast-Eintraege lassen sich nicht bearbeiten
                 if (!app.isGuest) DropdownMenuItem(text = { Text(stringResource(R.string.web_settings)) },
                     leadingIcon = { Icon(Icons.Filled.Settings, null) },
@@ -1168,6 +1407,17 @@ class WebAppActivity : FragmentActivity() {
         private const val REFRESH_AFTER_MS = 30 * 60_000L
         /** nach einem Netzwechsel so lange warten, bis das neue Netz steht (WLAN weg -> Mobilfunk kommt nach) */
         private const val NET_SETTLE_MS = 1_500L
+        /** Funkloch: erster erneuter Versuch nach dieser Zeit, dann doppelt so lange bis hoechstens OFFLINE_RETRY_MAX_MS */
+        private const val OFFLINE_RETRY_MS = 15_000L
+        private const val OFFLINE_RETRY_MAX_MS = 120_000L
+        /** so lange zeigt das Band "Keine Verbindung" den Text, danach nur noch das Symbol */
+        private const val BAND_FULL_MS = 6_000L
+        /** so lange bleibt "Wieder verbunden · tippen zum Neuladen" (als Symbol), danach "Aktualisieren" im Menue */
+        private const val RECONNECTED_MS = 30_000L
+        /** Mindestabstand stiller Funkloch-Pruefungen, die Netz-Ereignisse ausloesen */
+        private const val QUIET_MIN_GAP_MS = 10_000L
+        /** zweiter Tipp auf "Aktualisieren" binnen dieser Zeit nach negativer Pruefung laedt trotzdem */
+        private const val MANUAL_FORCE_MS = 10_000L
         /** "Bestaetigen" erst nach dieser Zeit antippbar (Tipp auf die Seite soll nicht versehentlich bestaetigen) */
         private const val CONFIRM_ARM_MS = 800L
     }

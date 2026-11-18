@@ -220,7 +220,9 @@ object Push {
         // eine Adresse einschleusen), sonst die Startseite
         val entry = url?.let { u -> runCatching { entryFor(ctx.store.apps(), u) }.getOrNull() }
         val open = (if (entry != null) Shortcuts.launchIntent(ctx, entry).putExtra(WebAppActivity.EXTRA_START_URL, url)
-            else Intent(ctx, MainActivity::class.java)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Adresse ohne passende Kachel: Startseite mit kurzem Hinweis statt stillschweigend
+            else Intent(ctx, MainActivity::class.java).apply { noTileHost(url)?.let { putExtra(MainActivity.EXTRA_NO_TILE, it) } })
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val n = NotificationCompat.Builder(ctx, if (urgent) CH_URGENT else CH_NORMAL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
@@ -248,6 +250,17 @@ object Push {
      */
     fun safeUrl(url: String) = (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) &&
         url.none { it == '\\' || it == '@' || it.isWhitespace() || it.isISOControl() }
+
+    /** Host (mit Port) einer Adresse ohne passende Kachel fuer den Hinweis; null = keine/ungueltige Adresse */
+    fun noTileHost(url: String?): String? {
+        if (url == null || !safeUrl(url)) return null
+        val u = uri(url) ?: return null
+        val host = u.host ?: return null
+        return (if (u.port > 0) "$host:${u.port}" else host).takeIf { validHost(it) }
+    }
+
+    /** Nur Zeichen eines Hostnamens/einer Adresse - MainActivity ist exportiert, der Hinweis zeigt sonst beliebigen Text */
+    fun validHost(h: String) = h.length in 1..100 && h.all { it.isLetterOrDigit() && it.code < 128 || it in ".-:[]" }
 
     /**
      * Eintrag zur Adresse aus einer Benachrichtigung: nur eigene Webseiten mit gleichem Ursprung (Schema, Host,

@@ -43,6 +43,9 @@
     <string name="cam_mute">Ton an/aus</string>
     <string name="web_settings">Einstellungen</string>
     <string name="web_refresh">Aktualisieren</string>
+    <string name="web_offline">Keine Verbindung · letzter Stand</string>
+    <string name="web_back_online">Wieder verbunden · tippen zum Neuladen</string>
+    <string name="web_offline_checking">Verbindung wird geprüft …</string>
     <string name="web_menu">Menü</string>
     <string name="act_gone">Diesen Schalter gibt es nicht mehr.</string>
     <string name="act_unlocking">Entsperren …</string>

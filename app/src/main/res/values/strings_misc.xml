@@ -43,6 +43,9 @@
     <string name="cam_mute">Sound on/off</string>
     <string name="web_settings">Settings</string>
     <string name="web_refresh">Refresh</string>
+    <string name="web_offline">No connection · last loaded</string>
+    <string name="web_back_online">Back online · tap to reload</string>
+    <string name="web_offline_checking">Checking connection …</string>
     <string name="web_menu">Menu</string>
     <string name="act_gone">This switch no longer exists.</string>
     <string name="act_unlocking">Unlocking …</string>

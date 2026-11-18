@@ -318,6 +318,7 @@
     <string name="push_intro">Nachrichten von deinem eigenen Server oder deiner Hausautomation empfangen. Aus: kein Kontakt zu Google. An: Zustellung über Google Firebase und unseren Schlüsseldienst; Nachrichtentexte werden durchgereicht, nicht gespeichert.</string>
     <string name="push_err_off">Push-Benachrichtigungen sind gerade nicht verfügbar.</string>
     <string name="push_err_fcm">Google nicht erreichbar – Google-Play-Dienste fehlen oder sind offline.</string>
+    <string name="push_no_tile">Keine Kachel für %1$s</string>
     <string name="push_lost">Dieser Push-Schlüssel gilt nicht mehr. Neuen erzeugen und dem Absender geben.</string>
     <string name="push_blocked">Benachrichtigungen sind für HomeHyrax blockiert.</string>
     <string name="push_settings">Einstellungen öffnen</string>

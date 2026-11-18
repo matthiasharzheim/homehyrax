@@ -388,6 +388,38 @@ object Net {
         }.isSuccess
     }
 
+    /** Gibt es ueberhaupt ein Netz (WLAN, Mobilfunk ...)? */
+    fun hasNetwork(): Boolean = runCatching { cm.activeNetwork != null }.getOrDefault(true)
+
+    /**
+     * Antwortet das Ziel der Web-App jetzt auf dem gewaehlten Weg (Route direkt oder Tunnel)? CONNECT ueber den
+     * eigenen Proxy, der genauso waehlt wie fuer die Seite, dann muss das Geraet selbst reagieren: http = Antwort auf
+     * HEAD, https = Zertifikat im TLS-Handshake (Probe). Ein blosser Verbindungsaufbau ueber schwaches Netz reicht
+     * nicht. Ohne Proxy (alte WebView, nur Eintraege ohne Tunnel) direkt. So wird eine geladene Seite erst neu
+     * geladen, wenn das sehr wahrscheinlich klappt.
+     */
+    suspend fun reachableNow(app: WebApp, timeoutMs: Int = 8000): Boolean = withContext(Dispatchers.IO) {
+        if (app.host.isEmpty()) return@withContext false
+        val hp = hostPort(app)
+        val port = proxyPort.toInt()
+        runCatching {
+            Socket().use { s ->
+                if (!proxyReady || port <= 0) {
+                    s.connect(InetSocketAddress(app.host, app.port), timeoutMs)
+                    s.soTimeout = timeoutMs
+                } else {
+                    s.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), 2000)
+                    s.soTimeout = timeoutMs
+                    val auth = if (!proxyAuthWorks) "" else "Proxy-Authorization: Basic " +
+                        Base64.encodeToString("${Wgbridge.ProxyUser}:$proxySecret".toByteArray(), Base64.NO_WRAP) + "\r\n"
+                    if (!Probe.connect(s, hp, auth)) return@runCatching false
+                }
+                if (app.url.startsWith("https:", ignoreCase = true)) Probe.tlsAnswers(s, app.host, app.port)
+                else Probe.httpAnswers(s, hp)
+            }
+        }.getOrDefault(false)
+    }
+
     @Suppress("DEPRECATION")
     fun localNetwork(): Network? = cm.allNetworks.firstOrNull { n ->
         val c = cm.getNetworkCapabilities(n) ?: return@firstOrNull false

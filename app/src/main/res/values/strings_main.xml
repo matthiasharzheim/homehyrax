@@ -318,6 +318,7 @@
     <string name="push_intro">Receive messages from your own server or home automation. Off: no contact with Google. On: delivery via Google Firebase and our key service; message texts are passed through, not stored.</string>
     <string name="push_err_off">Push notifications are currently not available.</string>
     <string name="push_err_fcm">Google could not be reached – Google Play services are missing or offline.</string>
+    <string name="push_no_tile">No tile for %1$s</string>
     <string name="push_lost">This push key is no longer valid. Create a new one and give it to your sender.</string>
     <string name="push_blocked">Notifications are blocked for HomeHyrax.</string>
     <string name="push_settings">Open settings</string>

@@ -303,6 +303,7 @@ class MainActivity : FragmentActivity() {
         // Erst nach dem Anzeigen: eine gesperrte Kachel fragt vorher nach dem Entsperren
         if (savedInstanceState == null) intent.getStringExtra(EXTRA_EDIT)?.let { id -> window.decorView.post { editGuarded(id) } }
         if (savedInstanceState == null) openSharedFile(intent)
+        if (savedInstanceState == null) noTileHint(intent)
         setContent { AppTheme { Root() } }
     }
 
@@ -312,6 +313,14 @@ class MainActivity : FragmentActivity() {
         // singleTask: laeuft die App schon, kommen Startbildschirm-Symbol (bearbeiten) und Datei hier an
         intent.getStringExtra(EXTRA_EDIT)?.let { editGuarded(it) }
         openSharedFile(intent)
+        noTileHint(intent)
+    }
+
+    /** Benachrichtigung mit einer Adresse, zu der es keine Kachel gibt: kurz sagen, warum die Startseite kommt */
+    private fun noTileHint(intent: Intent?) {
+        val host = intent?.getStringExtra(EXTRA_NO_TILE)?.takeIf { Push.validHost(it) } ?: return
+        intent.removeExtra(EXTRA_NO_TILE)
+        Toast.makeText(this, getString(R.string.push_no_tile, host), Toast.LENGTH_LONG).show()
     }
 
     /** Datei aus einem Messenger o. ae. geoeffnet: wie "HomeHyrax uebernehmen -> Datei oeffnen". */
@@ -2840,6 +2849,8 @@ class MainActivity : FragmentActivity() {
 
     companion object {
         const val EXTRA_EDIT = "edit"
+        /** Host aus einer Benachrichtigung ohne passende Kachel (nur fuer den Hinweis) */
+        const val EXTRA_NO_TILE = "no_tile"
 
         /** Kamera-Kachel: Zeitpunkt des letzten Versuchs, ein frisches Bild zu holen (je Eintrag). */
         private val camTried = mutableMapOf<String, Long>()
