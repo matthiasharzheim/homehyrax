@@ -160,6 +160,14 @@ class WebAppActivity : FragmentActivity() {
     private var offline by mutableStateOf(false)
     /** nach einem Funkloch wieder erreichbar: Weg umgestellt, Seite bewusst NICHT neu geladen (Band "tippen zum Neuladen") */
     private var reconnected by mutableStateOf(false)
+    /**
+     * Letzter Beweis, dass die Seite ihr Ziel erreicht (eigene Abrufe mit Antwort, Hauptseite fertig geladen):
+     * Band weg, und eine parallel scheiternde App-Pruefung setzt es nicht wieder (A-470: Band stand, obwohl die
+     * Seite laufend frische Daten holte)
+     */
+    private var pageOkAt = 0L
+    /** Hauptseite dieses Ladevorgangs ist gescheitert (onPageFinished kommt auch nach Fehlerseiten) */
+    private var mainFrameFailed = false
     /** Pruefung lief bis in den Hintergrund (Ergebnis unzuverlaessig: Proxy-Passwort gilt wieder): in onStart wiederholen */
     private var recheckOnStart = false
     /** Beginn der letzten stillen Pruefung (Netz-Ereignisse bremsen) */
@@ -579,6 +587,9 @@ class WebAppActivity : FragmentActivity() {
             !ok && manual && android.os.SystemClock.elapsedRealtime() - manualFailedAt < MANUAL_FORCE_MS -> { manualFailedAt = 0; load() }
             ok && (reload || startUrl != null) -> load()
             ok -> { offline = false; if (wasOffline) reconnected = true; afterConnecting() }
+            // App-Pruefung scheitert, die Seite erreicht ihr Ziel aber (z. B. Pruefweg anders als der der Seite):
+            // der Seite glauben, sonst stuende "keine Verbindung" ueber einer laufenden Seite
+            pageOkAt >= lastQuietTry && Net.hasNetwork() -> { offline = false; reconnected = false; afterConnecting() }
             else -> {
                 offline = true; reconnected = false
                 if (manual) manualFailedAt = android.os.SystemClock.elapsedRealtime()
@@ -704,6 +715,7 @@ class WebAppActivity : FragmentActivity() {
         // App-Version fuer die Seite/den Dienst erkennbar (z. B. im Protokoll des Dienstes)
         settings.userAgentString = settings.userAgentString + " HomeHyrax/" + BuildConfig.VERSION_NAME
         confirmBridge(this)
+        netBridge(this)
         webChromeClient = Chrome()
         webViewClient = Client()
         setDownloadListener { url, ua, disposition, mime, _ -> download(url, ua, disposition, mime) }
@@ -902,6 +914,29 @@ class WebAppActivity : FragmentActivity() {
     }
 
     /**
+     * Erfolgssignal aus der Seite: Antwortet ein eigener Abruf (fetch/XHR an den Ursprung des Eintrags, beliebiger
+     * HTTP-Status, nicht die Fehlerseite des eigenen Proxys), meldet ein Dokumentstart-Skript "ok" - hoechstens alle
+     * 5 s, nur Hauptseite, nur vom eigenen Ursprung. Traegt keine Daten. Alte WebViews: nur onPageFinished.
+     */
+    private fun netBridge(w: WebView) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
+            !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        val own = ConfirmBridge.origin(Uri.parse(app.url)) ?: return
+        runCatching {
+            WebViewCompat.addWebMessageListener(w, NET_CHANNEL, setOf(own)) { _, message, source, mainFrame, _ ->
+                if (mainFrame && message.data == "ok" && ConfirmBridge.origin(source) == own) pageReachedTarget()
+            }
+            WebViewCompat.addDocumentStartJavaScript(w, netJs(Wgbridge.ErrorHeader), setOf(own))
+        }
+    }
+
+    /** Die Seite hat ihr Ziel gerade erreicht: echtes Online, Band weg (ohne "tippen zum Neuladen" - sie laeuft ja) */
+    private fun pageReachedTarget() {
+        pageOkAt = android.os.SystemClock.elapsedRealtime()
+        if (offline && !locked && phase == Phase.Ready) { offline = false; reconnected = false }
+    }
+
+    /**
      * Eigener Dialog der App (Name des Eintrags, Adresse, Text der Seite) - die Seite kann ihn weder faelschen noch
      * selbst bestaetigen. "Bestaetigen" ist kurz gesperrt, damit ein Tipp, der der Seite galt, nicht versehentlich
      * bestaetigt. Optional danach Fingerabdruck/Gesicht/PIN, dann Unterschrift mit dem Geraeteschluessel.
@@ -977,6 +1012,7 @@ class WebAppActivity : FragmentActivity() {
             // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
             pageBusy = false
             reconnected = false   // neu geladen: Hinweis "tippen zum Neuladen" erledigt
+            mainFrameFailed = false
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -984,6 +1020,8 @@ class WebAppActivity : FragmentActivity() {
             if (app.desktop) view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
             // alte WebViews ohne Dokumentstart-Skript: nach dem Laden nachreichen (PULL_JS laeuft nur einmal)
             if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(PULL_JS + ";" + MIC_JS, null)
+            // Hauptseite des Eintrags ohne Fehler fertig (auch von der Seite selbst neu geladen): Ziel erreicht
+            if (!mainFrameFailed && phase == Phase.Ready && isAppHost(url.orEmpty())) pageReachedTarget()
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
@@ -1042,6 +1080,7 @@ class WebAppActivity : FragmentActivity() {
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (!request.isForMainFrame) { subRequestFailed(request); return }
+            mainFrameFailed = true
             awaitingLoad = false
             val t = tunnel
             // Direktversuch gescheitert (z. B. fremdes WLAN mit gleicher IP) -> Tunnel
@@ -1069,6 +1108,7 @@ class WebAppActivity : FragmentActivity() {
             }
             // Kopfzeile case-insensitiv pruefen: Go schreibt sie kanonisiert ("X-Homehyrax-Error").
             if (request.isForMainFrame && response.responseHeaders?.keys?.any { it.equals(Wgbridge.ErrorHeader, ignoreCase = true) } == true) {
+                mainFrameFailed = true
                 awaitingLoad = false
                 val t = tunnel
                 if (!viaTunnel && t != null && !fallbackTried) {
@@ -1219,9 +1259,10 @@ class WebAppActivity : FragmentActivity() {
                     Text(verbindungText(), color = Color.White, fontSize = 13.sp)
                 }
             }
-            if (!locked && phase == Phase.Ready && (offline || reconnected || refreshing)) {
-                // oben links (rechts sitzt der Menue-Knopf), wie dieser unter Statusleiste/Kamera-Loch
-                OfflineBand(Modifier.align(Alignment.TopStart).statusBarsPadding().displayCutoutPadding().padding(6.dp))
+            if (!locked && phase == Phase.Ready && !showBadge && (offline || reconnected || refreshing)) {
+                // oben mittig: links steht meist der Seitentitel (A-470: Symbol lag ueber dem Seitentitel), rechts der
+                // Menue-Knopf; wie dieser unter Statusleiste/Kamera-Loch
+                OfflineBand(Modifier.align(Alignment.TopCenter).statusBarsPadding().displayCutoutPadding().padding(6.dp))
             }
         }
     }
@@ -1471,6 +1512,25 @@ private const val MIC_JS =
 
 /** Beendet alle Mikrofon-Spuren, die die Seite ueber getUserMedia geoeffnet hat (Hauptseite und iframes). */
 private const val MIC_STOP_JS = "(function(){try{if(window.__hhMic)window.__hhMic();}catch(x){}})()"
+
+/**
+ * Meldet der App, dass die Seite ihr Ziel erreicht: Antwort auf einen eigenen fetch/XHR (gleicher Ursprung,
+ * beliebiger Status, nicht die Fehlerseite des eigenen Proxys mit Kopfzeile [err]). Hoechstens alle 5 s, keine Daten.
+ * Aendert sonst nichts an der Seite (Rueckgabewerte unveraendert).
+ */
+private fun netJs(err: String) =
+    "(function(){if(window.__hhNet)return;window.__hhNet=1;var c=window.$NET_CHANNEL;if(!c)return;var t=0;" +
+    "function ok(){var n=Date.now();if(n-t<5000)return;t=n;try{c.postMessage('ok');}catch(x){}}" +
+    "function own(u){try{return new URL(u,location.href).origin===location.origin;}catch(x){return false;}}" +
+    "var f=window.fetch;if(f){window.fetch=function(i){var u=i&&i.url?i.url:String(i);var p=f.apply(window,arguments);" +
+    "if(own(u))p.then(function(r){if(!r.headers.get('$err'))ok();},function(){});return p;};}" +
+    "var X=window.XMLHttpRequest&&XMLHttpRequest.prototype;if(X){var o=X.open,s=X.send;" +
+    "X.open=function(m,u){this.__hhU=u;return o.apply(this,arguments);};" +
+    "X.send=function(){var x=this;if(own(x.__hhU))x.addEventListener('load',function(){" +
+    "if(!x.getResponseHeader('$err'))ok();});return s.apply(this,arguments);};}})()"
+
+/** Nachrichtenkanal fuer das Erfolgssignal der Seite (nur eigener Ursprung) */
+private const val NET_CHANNEL = "HomeHyraxNetChannel"
 
 private const val DESKTOP_VIEWPORT_JS =
     "(function(){var m=document.querySelector('meta[name=viewport]');" +
