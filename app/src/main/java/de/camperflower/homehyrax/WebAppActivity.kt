@@ -75,6 +75,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -123,6 +124,10 @@ class WebAppActivity : FragmentActivity() {
     private var showBadge by mutableStateOf(false)
     /** zaehlt jedes Laden der Seite: Menue-Knopf fuer ein paar Sekunden zeigen */
     private var menuAnstoss by mutableStateOf(0)
+    /** Nummer der aktuellen WebView: "Aktualisieren" baut eine neue, Compose tauscht die Ansicht danach aus */
+    private var webGen by mutableStateOf(0)
+    /** "Aktualisieren" laeuft: nach dem Laden "Neu verbunden", sonst zeigt die Fehlerseite den Grund */
+    private var restarting = false
     private var menuOpen by mutableStateOf(false)
     /** Die Seite nutzt die aktuelle Beruehrung selbst (innerer Scrollbereich, Ziehen-Sortieren ...; meldet PULL_JS). */
     @Volatile private var pageBusy = false
@@ -482,6 +487,7 @@ class WebAppActivity : FragmentActivity() {
     }
 
     private fun fail(msg: String) {
+        restarting = false   // Fehlerseite nennt den Grund
         offline = false
         fallbackPending = false
         phase = Phase.Failed(msg)
@@ -514,6 +520,41 @@ class WebAppActivity : FragmentActivity() {
         // schliesst alte Verbindungen), und ein Neuladen beim Losfahren unterbraeche z. B. Offline-Ton
         retry(reload = false)
         return true
+    }
+
+    /**
+     * "Aktualisieren" im Menue (zweimal oben nach unten wischen) = wie ein Neustart der Kachel (A-476: eine haengende
+     * Seite liess sich vorher nur durch Schliessen der App retten): neue WebView (Skripte, offene Abrufe und deren Verbindungen der alten Seite weg), Zwischenspeicher
+     * leer, eigener WireGuard-Tunnel neu aufgebaut, zuhause/unterwegs neu entschieden, Seite neu vom Ziel geladen.
+     * Bleibt auf derselben Adresse (gleicher Ursprung), sonst Startadresse des Eintrags.
+     */
+    private fun restart() {
+        if (phase is Phase.Connecting || refreshing || locked) return
+        restarting = true
+        val here = web.url?.takeIf { MainActivity.sameOrigin(app.url, it) }
+        val old = web
+        old.stopLoading()
+        web = createWebView()
+        webGen++
+        // erst nach dem Austausch in Compose zerstoeren (haengt sonst noch an der Ansicht)
+        old.post { (old.parent as? ViewGroup)?.removeView(old); old.destroy() }
+        web.clearCache(true)
+        if (startUrl == null) startUrl = here
+        startUrlFromLink = false
+        loadedOnce = false
+        offline = false
+        fallbackTried = false
+        proxyAuthTries = 0
+        recheckPending = false
+        val t = tunnel
+        // eigener WireGuard-Tunnel: stoppen, start() baut ihn frisch auf (Tailscale nicht - dessen Neustart dauert und
+        // haengt am Login); Gast holt ohnehin jedes Mal den Schluessel neu
+        if (t != null && !t.isTailscale && (viaTunnel || wantTunnel)) runCatching { Wgbridge.stopTunnel(t.id) }
+        releaseTunnel()
+        wantTunnel = false
+        viaTunnel = false
+        decidedOn = null
+        lifecycleScope.launch { start() }
     }
 
     /**
@@ -1018,6 +1059,7 @@ class WebAppActivity : FragmentActivity() {
             if (awaitingLoad && phase is Phase.Connecting) {
                 awaitingLoad = false
                 phase = Phase.Ready
+                if (restarting) { restarting = false; Toast.makeText(this@WebAppActivity, getString(R.string.web_restarted), Toast.LENGTH_SHORT).show() }
                 afterConnecting()
                 flashBadge()
                 menuAnstoss++   // Menue-Knopf kurz zeigen, damit man weiss, dass es ihn gibt
@@ -1228,7 +1270,7 @@ class WebAppActivity : FragmentActivity() {
     @androidx.compose.runtime.Composable
     private fun Screen() {
         Box(Modifier.fillMaxSize().background(Color(0xFF101418)).then(if (app.fullscreen) Modifier else Modifier.systemBarsPadding())) {
-            AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
+            key(webGen) { AndroidView(factory = { web }, modifier = Modifier.fillMaxSize()) }
 
             when (val p = phase) {
                 is Phase.Connecting -> Cover { Busy(p.text) }
@@ -1339,7 +1381,7 @@ class WebAppActivity : FragmentActivity() {
                 DropdownMenuItem(text = { Text(stringResource(R.string.web_refresh)) },
                     leadingIcon = { Icon(Icons.Filled.Refresh, null) },
                     enabled = phase !is Phase.Connecting && !refreshing,
-                    onClick = { open = false; retry(manual = true) })
+                    onClick = { open = false; restart() })
                 // Gast-Eintraege lassen sich nicht bearbeiten
                 if (!app.isGuest) DropdownMenuItem(text = { Text(stringResource(R.string.web_settings)) },
                     leadingIcon = { Icon(Icons.Filled.Settings, null) },
