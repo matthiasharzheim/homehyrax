@@ -41,7 +41,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +50,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -156,10 +154,8 @@ class WebAppActivity : FragmentActivity() {
     private var refreshing by mutableStateOf(false)
     /** von Hand angestossen: Band "Verbindung wird geprueft" zeigen */
     private var refreshManual by mutableStateOf(false)
-    /** Seite steht, aber das Ziel antwortet nicht (Funkloch): Band statt Fehlerseite, letzter Stand bleibt nutzbar */
+    /** Seite steht, aber das Ziel antwortet nicht (Funkloch): keine Fehlerseite, letzter Stand bleibt nutzbar, Links werden abgefangen */
     private var offline by mutableStateOf(false)
-    /** nach einem Funkloch wieder erreichbar: Weg umgestellt, Seite bewusst NICHT neu geladen (Band "tippen zum Neuladen") */
-    private var reconnected by mutableStateOf(false)
     /**
      * Letzter Beweis, dass die Seite ihr Ziel erreicht (eigene Abrufe mit Antwort, Hauptseite fertig geladen):
      * Band weg, und eine parallel scheiternde App-Pruefung setzt es nicht wieder (A-470: Band stand, obwohl die
@@ -312,7 +308,7 @@ class WebAppActivity : FragmentActivity() {
                     // Funkloch mit stehender Seite: neues Netz -> gleich nachsehen, ob das Ziel wieder antwortet
                     // ganz ohne Netz (Mobilfunk-Funkloch, networkKey bleibt "mobile"): stehende Seite gleich als offline
                     // markieren - Band, Links abfangen - ohne erst zu pruefen
-                    if (!Net.hasNetwork()) { if (loadedOnce && phase == Phase.Ready) { offline = true; reconnected = false } }
+                    if (!Net.hasNetwork()) { if (loadedOnce && phase == Phase.Ready) { offline = true } }
                     else if (offline && refreshing) recheckPending = true   // laufende Pruefung danach wiederholen
                     // Netz-Ereignisse kommen gern in Schueben: hoechstens alle 10 s eine Funkloch-Pruefung (Gast: Schluesseldienst)
                     else if (offline) {
@@ -477,7 +473,6 @@ class WebAppActivity : FragmentActivity() {
     private fun load() {
         startUrlFromLink = false
         offline = false
-        reconnected = false
         phase = Phase.Connecting(getString(if (viaTunnel) R.string.web_loading_tunnel else R.string.web_loading))
         awaitingLoad = true
         val target = startUrl
@@ -489,7 +484,6 @@ class WebAppActivity : FragmentActivity() {
     private fun fail(msg: String) {
         offline = false
         fallbackPending = false
-        reconnected = false
         phase = Phase.Failed(msg)
         afterConnecting()
     }
@@ -542,7 +536,6 @@ class WebAppActivity : FragmentActivity() {
      * letzten Stand stehen (z. B. offline gespeicherte Inhalte), oben ein Band "Keine Verbindung".
      */
     private suspend fun refreshKeepingPage(manual: Boolean, reload: Boolean) {
-        val wasOffline = offline
         lastQuietTry = android.os.SystemClock.elapsedRealtime()
         refreshing = true
         refreshManual = manual
@@ -586,13 +579,14 @@ class WebAppActivity : FragmentActivity() {
             // die Pruefung nicht versteht) - sonst kaeme man nur ueber Schliessen der Kachel wieder heran
             !ok && manual && android.os.SystemClock.elapsedRealtime() - manualFailedAt < MANUAL_FORCE_MS -> { manualFailedAt = 0; load() }
             ok && (reload || startUrl != null) -> load()
-            ok -> { offline = false; if (wasOffline) reconnected = true; afterConnecting() }
+            ok -> { offline = false; afterConnecting() }
             // App-Pruefung scheitert, die Seite erreicht ihr Ziel aber (z. B. Pruefweg anders als der der Seite):
             // der Seite glauben, sonst stuende "keine Verbindung" ueber einer laufenden Seite
-            pageOkAt >= lastQuietTry && Net.hasNetwork() -> { offline = false; reconnected = false; afterConnecting() }
+            pageOkAt >= lastQuietTry && Net.hasNetwork() -> { offline = false; afterConnecting() }
             else -> {
-                offline = true; reconnected = false
-                if (manual) manualFailedAt = android.os.SystemClock.elapsedRealtime()
+                offline = true
+                // von Hand: Ergebnis kurz sagen (kein dauerhaftes Symbol mehr, A-472)
+                if (manual) { manualFailedAt = android.os.SystemClock.elapsedRealtime(); Toast.makeText(this, getString(R.string.web_offline), Toast.LENGTH_LONG).show() }
                 // im Funkloch angetippter Link: nicht Minuten spaeter von selbst dorthin springen (Benachrichtigung bleibt)
                 if (startUrlFromLink) { startUrl = null; startUrlFromLink = false }
                 afterConnecting()
@@ -933,7 +927,7 @@ class WebAppActivity : FragmentActivity() {
     /** Die Seite hat ihr Ziel gerade erreicht: echtes Online, Band weg (ohne "tippen zum Neuladen" - sie laeuft ja) */
     private fun pageReachedTarget() {
         pageOkAt = android.os.SystemClock.elapsedRealtime()
-        if (offline && !locked && phase == Phase.Ready) { offline = false; reconnected = false }
+        if (offline && !locked && phase == Phase.Ready) offline = false
     }
 
     /**
@@ -1011,7 +1005,6 @@ class WebAppActivity : FragmentActivity() {
             // neue Seite: alter Wert aus einem Dialog der vorigen Seite gilt nicht mehr (sonst haengt die Sperre,
             // wenn die neue Seite kein Skript hat, z. B. Bild oder PDF)
             pageBusy = false
-            reconnected = false   // neu geladen: Hinweis "tippen zum Neuladen" erledigt
             mainFrameFailed = false
         }
 
@@ -1259,48 +1252,25 @@ class WebAppActivity : FragmentActivity() {
                     Text(verbindungText(), color = Color.White, fontSize = 13.sp)
                 }
             }
-            if (!locked && phase == Phase.Ready && !showBadge && (offline || reconnected || refreshing)) {
-                // oben mittig: links steht meist der Seitentitel (A-470: Symbol lag ueber dem Seitentitel), rechts der
-                // Menue-Knopf; wie dieser unter Statusleiste/Kamera-Loch
-                OfflineBand(Modifier.align(Alignment.TopCenter).statusBarsPadding().displayCutoutPadding().padding(6.dp))
+            if (!locked && phase == Phase.Ready && refreshManual) {
+                // nur die von Hand angestossene Pruefung zeigt etwas (oben mittig, links steht meist der Seitentitel).
+                // Kein Funkloch-Symbol mehr (A-472): es stand bei laufender Seite, die Seite zeigt ihren Stand selbst
+                CheckingBand(Modifier.align(Alignment.TopCenter).statusBarsPadding().displayCutoutPadding().padding(6.dp))
             }
         }
     }
 
-    /**
-     * Band ueber der stehenden Seite: "Keine Verbindung · letzter Stand" bzw. nach dem Funkloch "Wieder verbunden · tippen zum
-     * Neuladen" (antippen = pruefen und neu laden). Text nur ein paar Sekunden, dann nur das Symbol, damit es nichts
-     * von der Seite verdeckt; stille Pruefungen zeigen nur einen kleinen Kreisel.
-     */
+    /** Kreisel "Verbindung wird geprueft …" waehrend "Aktualisieren"; scheitert es, sagt es ein kurzer Hinweis */
     @androidx.compose.runtime.Composable
-    private fun OfflineBand(modifier: Modifier) {
-        var full by remember { mutableStateOf(offline || reconnected || refreshManual) }
-        // "tippen zum Neuladen" nicht ewig oben links stehen lassen (dort sitzen oft Zurueck/Menue der Seite)
-        LaunchedEffect(reconnected) { if (reconnected) { delay(RECONNECTED_MS); reconnected = false } }
-        LaunchedEffect(offline, reconnected, refreshManual) {
-            full = offline || reconnected || refreshManual
-            if (full && !refreshManual) { delay(BAND_FULL_MS); full = false }
-        }
+    private fun CheckingBand(modifier: Modifier) {
         Row(
-            modifier.heightIn(min = 40.dp).widthIn(min = 40.dp).clip(RoundedCornerShape(50)).background(Color(0xE6202830))
-                .clickable(enabled = !refreshing) { retry(manual = true) }
+            modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(50)).background(Color(0xE6202830))
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            when {
-                refreshing -> CircularProgressIndicator(color = Color(0xFFF2B544), strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                reconnected -> Icon(Icons.Filled.Refresh, stringResource(R.string.web_refresh), tint = Color(0xFFF2B544), modifier = Modifier.size(16.dp))
-                else -> Icon(Icons.Filled.CloudOff, stringResource(R.string.web_retry), tint = Color(0xFFFF8A80), modifier = Modifier.size(16.dp))
-            }
-            AnimatedVisibility(visible = full) {
-                Text(stringResource(when {
-                        refreshManual -> R.string.web_offline_checking
-                        reconnected -> R.string.web_back_online
-                        else -> R.string.web_offline
-                    }),
-                    color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 8.dp))
-            }
+            CircularProgressIndicator(color = Color(0xFFF2B544), strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+            Text(stringResource(R.string.web_offline_checking), color = Color.White, fontSize = 13.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp))
         }
     }
 
@@ -1451,10 +1421,6 @@ class WebAppActivity : FragmentActivity() {
         /** Funkloch: erster erneuter Versuch nach dieser Zeit, dann doppelt so lange bis hoechstens OFFLINE_RETRY_MAX_MS */
         private const val OFFLINE_RETRY_MS = 15_000L
         private const val OFFLINE_RETRY_MAX_MS = 120_000L
-        /** so lange zeigt das Band "Keine Verbindung" den Text, danach nur noch das Symbol */
-        private const val BAND_FULL_MS = 6_000L
-        /** so lange bleibt "Wieder verbunden · tippen zum Neuladen" (als Symbol), danach "Aktualisieren" im Menue */
-        private const val RECONNECTED_MS = 30_000L
         /** Mindestabstand stiller Funkloch-Pruefungen, die Netz-Ereignisse ausloesen */
         private const val QUIET_MIN_GAP_MS = 10_000L
         /** zweiter Tipp auf "Aktualisieren" binnen dieser Zeit nach negativer Pruefung laedt trotzdem */
